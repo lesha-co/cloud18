@@ -1,0 +1,21 @@
+{
+  "name": "reddit-bubbles-playwright",
+  "version": "1.0.0",
+  "description": "A crawler to map subreddit connections",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types --env-file=.env src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.57.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.1",
+    "@types/sqlite3": "^3.1.11"
+  }
+}

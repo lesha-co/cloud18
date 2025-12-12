@@ -14,7 +14,6 @@ This project will create a graph representation of how subreddits are interconne
 │   ├── crawler.ts         # Subreddit crawler
 │   ├── queue.ts           # Queue database operations
 │   └── types.ts           # Type definitions
-├── cookies.json           # Reddit authentication cookies
 ├── package.json
 ├── tsconfig.json
 └── .gitignore
@@ -98,7 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_queue_visited ON subreddit_queue(visited);
 1. **Initialization**:
    - Create/connect to SQLite database
    - Create tables if they don't exist
-   - Load cookies from cookies.json
    - Add initial subreddits to queue table
 
 2. **Main Loop**:
@@ -123,7 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_queue_visited ON subreddit_queue(visited);
 
 ## Authentication Handling
 
-Reddit authentication will be handled by loading cookies from a pre-existing cookies.json file. This approach:
+Reddit authentication will be handled by loading cookies from a pre-existing cookies.sqlite file. This approach:
 - Avoids having to implement a login flow
 - Allows access to restricted subreddits
 - Prevents being blocked as a bot
