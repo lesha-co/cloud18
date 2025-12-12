@@ -30,7 +30,7 @@ try {
   // console.log('Added initial subreddit "apple" to queue');
 
   // Initialize crawler
-  const crawler = new RedditCrawler(cookiesFilePath, delay);
+  const crawler = new RedditCrawler(delay);
   await crawler.init();
 
   // Check if we should seed from a user's multireddits
@@ -45,6 +45,7 @@ try {
   // Process subreddits using the generator
   let count = 0;
   for await (const subreddit of db.getUnvisitedGenerator()) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
     if (count >= maxSubreddits) {
       console.log(
         `Reached maximum subreddit limit (${maxSubreddits}). Stopping.`,
@@ -65,9 +66,6 @@ try {
       await db.addEdge(subreddit, discovered);
     }
 
-    console.log(
-      `Added ${discoveredSubreddits.length} discovered subreddits to the queue`,
-    );
     console.log(
       `Created ${discoveredSubreddits.length} edges from r/${subreddit}`,
     );

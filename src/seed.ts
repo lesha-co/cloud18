@@ -18,7 +18,7 @@ export async function seed(
   console.log(`\n=== Starting seed process for user: ${username} ===\n`);
 
   // First, we need to find all multireddit links from the user's page
-  const multiredditLinks = await findUserMultireddits(crawler, username);
+  const multiredditLinks = await crawler.findMultis(username);
 
   if (multiredditLinks.length === 0) {
     console.log(`No multireddits found for user ${username}`);
@@ -31,25 +31,23 @@ export async function seed(
   multiredditLinks.forEach((link) => console.log(`  - ${link}`));
 
   // Crawl each multireddit and collect subreddits
-  const subs = (
-    await Promise.all(
-      multiredditLinks.map(async (multiredditName) => {
-        console.log(
-          `\nCrawling multireddit: /user/${username}/m/${multiredditName}`,
-        );
-        const subreddits = await crawler.crawlMultireddit(
-          username,
-          multiredditName,
-        );
+  const subs: string[] = [];
 
-        return subreddits;
+  for (const multiredditName of multiredditLinks) {
+    console.log(
+      `\nCrawling multireddit: /user/${username}/m/${multiredditName}`,
+    );
+    const subreddits = await crawler.crawlMultireddit(
+      username,
+      multiredditName,
+    );
 
-        console.log(
-          `  Found ${subreddits.length} subreddits in ${multiredditName}`,
-        );
-      }),
-    )
-  ).flat();
+    subs.concat(subreddits);
+
+    console.log(
+      `  Found ${subreddits.length} subreddits in ${multiredditName}`,
+    );
+  }
 
   const subsSet = Array.from(new Set([...subs]));
 
@@ -63,14 +61,6 @@ export async function seed(
  * @param username - The Reddit username
  * @returns Array of multireddit names
  */
-async function findUserMultireddits(
-  crawler: RedditCrawler,
-  username: string,
-): Promise<string[]> {
-  console.log(`Visiting user profile: https://www.reddit.com/user/${username}`);
-
-  return await crawler.findMultis(username);
-}
 
 /**
  * Find common subreddits that appear in multiple multireddits

@@ -1,19 +1,12 @@
 import { firefox } from "playwright";
-import type { Browser, BrowserContext, Page, Cookie } from "playwright";
-import { existsSync } from "node:fs";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as os from "node:os";
-import sqlite3 from "sqlite3";
+import type { Browser, BrowserContext, Page } from "playwright";
 
 class RedditCrawler {
-  private cookiesFilePath: string;
   private delay: number;
   public browser: Browser | null = null;
   public context: BrowserContext | null = null;
 
-  constructor(cookiesFilePath: string, delay = 2000) {
-    this.cookiesFilePath = cookiesFilePath;
+  constructor(delay = 2000) {
     this.delay = delay;
   }
 
@@ -24,39 +17,44 @@ class RedditCrawler {
 
     const page = await this.context.newPage();
     await page.goto(`https://www.reddit.com/user/${username}`, {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
     });
 
+    console.log(
+      "Navigated to user page, waiting left-nav-multireddits-controller",
+    );
     // Wait for content to load
-    await page.waitForSelector("body", { timeout: 10000 });
+    await page.waitForSelector("left-nav-multireddits-controller", {
+      timeout: 10000,
+    });
+    console.log("Navigated to user page, waiting ok");
 
     // Extract multireddit links
-    const multiredditNames = await page.evaluate((user) => {
-      const links: string[] = [];
+    const multiredditNames = await page.evaluate(() => {
+      const ctrlr = document.querySelector("left-nav-multireddits-controller");
+      const ctrlr_sr = ctrlr?.shadowRoot;
+      const ctrlr_items = ctrlr_sr?.querySelectorAll(
+        "left-nav-multireddit-item",
+      );
+      const items = Array.from(ctrlr_items ?? [])
+        .map((x) => x.getAttribute("multiredditpath")?.split("/").at(-2))
+        .filter((x) => x !== undefined);
 
-      document
-        .querySelectorAll(`a[href*="/user/${user}/m/"]`)
-        .forEach((element) => {
-          const href = element.getAttribute("href");
-          if (href) {
-            // Extract multireddit name from URL
-            const match = href.match(/\/(?:user|u)\/[^\/]+\/m\/([^\/\?]+)/);
-            if (match && match[1]) {
-              links.push(match[1]);
-            }
-          }
-        });
-
-      // Remove duplicates
-      return [...new Set(links)];
-    }, username);
+      console.log("Found multis");
+      console.log(ctrlr);
+      console.log(ctrlr_sr);
+      console.log(ctrlr_items);
+      console.log(items);
+      debugger;
+      return items;
+    });
 
     // If we didn't find any multireddits in the page, try the old Reddit layout
     return multiredditNames;
   }
 
   /**
-   * Initialize the browser with cookies from the provided cookies file
+   * Initialize the browser and login with username/password
    */
   async init(): Promise<void> {
     try {
@@ -69,42 +67,14 @@ class RedditCrawler {
       this.context = await this.browser.newContext({
         userAgent:
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        viewport: { width: 960, height: 540 },
+        viewport: { width: 1400, height: 800 },
         locale: "en-US",
       });
-      await this.loadCookies();
-      // Navigate to Reddit first before adding cookies
-      const page = await this.context.newPage();
-      await page.goto("https://www.reddit.com", {
-        waitUntil: "domcontentloaded",
-      });
 
-      // Load cookies from file
+      // Login with username and password
+      await this.login();
 
-      // Refresh the page to apply cookies
-      await page.reload({ waitUntil: "networkidle" });
-
-      // Verify cookies are working by checking if we're logged in
-      const isLoggedIn = await page.evaluate(() => {
-        // Check for user menu or login button
-        return (
-          document.querySelector(
-            '[data-testid="user-dropdown-button"], #USER_DROPDOWN',
-          ) !== null
-        );
-      });
-
-      if (isLoggedIn) {
-        console.log("Browser initialized with cookies - user is logged in");
-      } else {
-        console.warn(
-          "Browser initialized with cookies - but user appears not logged in",
-        );
-      }
-
-      await page.close();
-
-      console.log("Browser initialized with cookies");
+      console.log("Browser initialized and logged in");
     } catch (error) {
       console.error("Error initializing browser:", error);
       throw error;
@@ -112,146 +82,158 @@ class RedditCrawler {
   }
 
   /**
-   * Load Reddit cookies from Firefox's cookies.sqlite file
+   * Login to Reddit using username and password
    */
-  async loadCookies(): Promise<void> {
+  async login(): Promise<void> {
+    if (!this.context) {
+      throw new Error("Browser context not initialized");
+    }
+
+    const username = process.env.USERNAME;
+    const password = process.env.PASSWORD;
+
+    if (!username || !password) {
+      throw new Error(
+        "USERNAME and PASSWORD environment variables must be set",
+      );
+    }
+
+    const page = await this.context.newPage();
+
     try {
-      // Validate that cookies file exists
-      if (!existsSync(this.cookiesFilePath)) {
-        throw new Error(
-          `Firefox cookies.sqlite file not found at: ${this.cookiesFilePath}`,
-        );
+      console.log("Navigating to Reddit login page...");
+
+      // Go to Reddit login page
+      await page.goto("https://www.reddit.com/login", {
+        waitUntil: "domcontentloaded",
+      });
+
+      // Wait for login form to load
+      await page.waitForSelector('input[name="username"]', { timeout: 10000 });
+      await page.waitForSelector('input[name="password"]', { timeout: 10000 });
+
+      console.log("Filling login form...");
+
+      // Fill in the username
+      await page.fill('input[name="username"]', username);
+
+      // Fill in the password
+      await page.fill('input[name="password"]', password);
+
+      // Small delay to ensure form is ready
+      await page.waitForTimeout(500);
+
+      // Find and click the login button - try multiple selectors
+      const loginButton = page
+        .locator(
+          'button[type="submit"]:has-text("Log In"), button:has-text("Log In"), fieldset button[type="submit"], .AnimatedForm button[type="submit"]',
+        )
+        .first();
+
+      // Check if button was found
+      const buttonCount = await loginButton.count();
+      console.log(`Found ${buttonCount} matching login button(s)`);
+
+      if (buttonCount > 0) {
+        const buttonText = await loginButton.textContent();
+        console.log(`Clicking login button with text: "${buttonText}"`);
+        await loginButton.click();
+      } else {
+        // Fallback: try to find any submit button in the form
+        console.log("Primary selectors failed, trying fallback...");
+        const submitButton = page.locator('form button[type="submit"]').first();
+        const fallbackCount = await submitButton.count();
+        if (fallbackCount > 0) {
+          const buttonText = await submitButton.textContent();
+          console.log(`Clicking fallback button with text: "${buttonText}"`);
+          await submitButton.click();
+        } else {
+          throw new Error("Could not find login button on page");
+        }
       }
+
+      // Wait for navigation after login - either success or error
+      console.log("Waiting for login response...");
+      console.log("Current URL:", page.url());
 
       try {
-        // Create a temporary copy of the cookies database to avoid lock issues
-        const tempDir = os.tmpdir();
-        const tempCookiesPath = path.join(
-          tempDir,
-          `cookies-${Date.now()}.sqlite`,
-        );
-
-        try {
-          // Copy the cookies file to a temporary location
-          await fs.copyFile(this.cookiesFilePath, tempCookiesPath);
-          console.log(
-            `Created temporary copy of cookies database at ${tempCookiesPath}`,
-          );
-        } catch (copyError) {
-          console.error("Error copying cookies database:", copyError);
-          throw new Error(
-            "Failed to copy Firefox cookies database. Make sure Firefox profile path is correct.",
-          );
-        }
-
-        const db = new sqlite3.Database(tempCookiesPath, sqlite3.OPEN_READONLY);
-
-        // Query to get Reddit cookies from Firefox's cookies.sqlite
-        const rows: any[] = await new Promise((resolve, reject) => {
-          db.all(
-            `
-            SELECT name, value, host as domain, path, expiry as expires,
-                   isSecure as secure, isHttpOnly as httpOnly
-            FROM moz_cookies
-            WHERE host LIKE '%reddit%'
-            `,
-            (err, rows) => {
-              if (err) reject(err);
-              else resolve(rows || []);
-            },
-          );
+        // Wait for Reddit to redirect away from the login page
+        await page.waitForURL(/^https:\/\/www\.reddit\.com\/?(?!login)/, {
+          timeout: 15000,
         });
+        console.log("Redirected from login page");
 
-        // Close the database
-        await new Promise<void>((resolve, reject) => {
-          db.close((err) => {
-            if (err) {
-              console.error("Error closing cookies database:", err);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
+        // Give Reddit time to establish the session
+        await page.waitForTimeout(3000);
 
-        // Clean up temporary file
-        try {
-          await fs.unlink(tempCookiesPath);
-          console.log("Cleaned up temporary cookies file");
-        } catch (unlinkError) {
-          console.warn("Could not delete temporary cookies file:", unlinkError);
-        }
+        // Wait for the page to fully load
+        await page.waitForLoadState("domcontentloaded");
 
-        if (!rows || rows.length === 0) {
-          console.warn("No Reddit cookies found in Firefox cookies.sqlite");
-          return;
-        }
-
-        // Debug: log raw cookie values
-        console.log(
-          "Raw cookies from Firefox:",
-          rows.map((c) => ({
-            name: c.name,
-            expires: c.expires,
-            domain: c.domain,
-          })),
-        );
-
-        // Convert Firefox cookie format to Playwright format
-        const playwrightCookies = rows.map((cookie: any) => {
-          // Firefox expiry: 0 means session cookie, positive number is Unix timestamp in microseconds
-          // Playwright expects: undefined for session cookies, positive Unix timestamp in seconds
-          let expiresValue;
-          if (!cookie.expires || cookie.expires === 0) {
-            expiresValue = undefined; // Session cookie
-          } else if (cookie.expires > 0) {
-            // Firefox stores in microseconds, convert to seconds
-            expiresValue = Math.floor(cookie.expires / 1000000);
-          } else {
-            console.warn(
-              `Unexpected expires value for cookie ${cookie.name}: ${cookie.expires}`,
+        // Try to wait for user indicator elements
+        await page
+          .waitForSelector(
+            '[data-testid="user-dropdown-button"], #USER_DROPDOWN, button[aria-label*="User account"], [data-testid="header-user-dropdown"], [id*="email-collection"]',
+            { timeout: 5000 },
+          )
+          .catch(() => {
+            console.log(
+              "User dropdown not found, checking other indicators...",
             );
-            expiresValue = undefined;
-          }
+          });
+      } catch (error) {
+        console.log("No redirect detected, checking for login error...");
 
-          return {
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain.startsWith(".")
-              ? cookie.domain
-              : cookie.domain, // Don't add dot prefix automatically
-            path: cookie.path || "/",
-            expires: expiresValue,
-            secure: Boolean(cookie.secure),
-            httpOnly: Boolean(cookie.httpOnly),
-            sameSite: "None" as const, // Changed from "Lax" to "None" for cross-site cookies
-          };
+        // Check if there's an error message on the login page
+        const hasError = await page.$$eval(
+          ".AnimatedForm__errorMessage, .status-error",
+          (elements) => elements.length > 0,
+        );
+
+        if (hasError) {
+          const errorMessage = await page.evaluate(() => {
+            const errorElement = document.querySelector(
+              ".AnimatedForm__errorMessage, .status-error",
+            );
+            return errorElement?.textContent || null;
+          });
+          throw new Error(`Login failed: ${errorMessage}`);
+        }
+      }
+
+      console.log("Final URL after login:", page.url());
+
+      // Check if login was successful by looking for user dropdown or username
+      const isLoggedIn = await page.evaluate(() => {
+        return (
+          document.querySelector(
+            '[data-testid="user-dropdown-button"], #USER_DROPDOWN, button[aria-label*="User account"], [data-testid="header-user-dropdown"]',
+          ) !== null ||
+          // Also check if we're no longer on the login page
+          !window.location.pathname.includes("/login")
+        );
+      });
+
+      if (isLoggedIn) {
+        console.log(`Successfully logged in as ${username}`);
+      } else {
+        // Check if there's an error message
+        const errorMessage = await page.evaluate(() => {
+          const errorElement = document.querySelector(
+            ".AnimatedForm__errorMessage, .status-error",
+          );
+          return errorElement?.textContent || null;
         });
 
-        // Add cookies to browser context
-        await this.context?.addCookies(playwrightCookies);
-        console.log(
-          `Loaded ${playwrightCookies.length} Reddit cookies from Firefox`,
-        );
-
-        // Debug: Log some important cookies to verify they're set
-        const importantCookies = playwrightCookies.filter((c) =>
-          ["reddit_session", "token_v2", "edgebucket", "loid", "pc"].includes(
-            c.name,
-          ),
-        );
-        if (importantCookies.length > 0) {
-          console.log(
-            "Important cookies loaded:",
-            importantCookies.map((c) => c.name).join(", "),
-          );
+        if (errorMessage) {
+          throw new Error(`Login failed: ${errorMessage}`);
+        } else {
+          throw new Error("Login failed: Could not verify login status");
         }
-      } catch (e) {
-        console.error("Error reading cookies from Firefox cookies.sqlite:", e);
-        throw new Error("Failed to extract cookies from Firefox");
       }
+
+      await page.close();
     } catch (error) {
-      console.error("Error loading cookies:", error);
+      await page.close();
       throw error;
     }
   }
@@ -268,7 +250,7 @@ class RedditCrawler {
 
       // Navigate to the subreddit
       await page.goto(`https://www.reddit.com/user/${user}/m/${multireddit}`, {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
       });
 
       // Wait for some content to load
@@ -280,7 +262,7 @@ class RedditCrawler {
       if (hasAgeGate) {
         console.log("Handled age verification prompt");
         // Wait for navigation after clicking the button
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
       }
 
       // Extract links to other subreddits
@@ -316,7 +298,7 @@ class RedditCrawler {
 
       // Navigate to the multireddit
       await page.goto(`https://www.reddit.com/user/${user}/m/${multireddit}`, {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
       });
 
       // Wait for some content to load
@@ -328,7 +310,7 @@ class RedditCrawler {
       if (hasAgeGate) {
         console.log("Handled age verification prompt");
         // Wait for navigation after clicking the button
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
       }
 
       // Extract links to other subreddits
@@ -367,7 +349,7 @@ class RedditCrawler {
 
       // Navigate to the subreddit
       await page.goto(`https://www.reddit.com/r/${normalizedSubreddit}`, {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
       });
 
       // Wait for some content to load
@@ -379,7 +361,7 @@ class RedditCrawler {
       if (hasAgeGate) {
         console.log("Handled age verification prompt");
         // Wait for navigation after clicking the button
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
       }
 
       // Extract links to other subreddits
