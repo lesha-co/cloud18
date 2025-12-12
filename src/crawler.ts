@@ -270,7 +270,8 @@ class RedditCrawler {
         // Wait for the page to be fully interactive
         await page.waitForTimeout(3000);
 
-        const buttonClicked = await page.evaluate(async () => {
+        // Get element handle from shadow DOM
+        const editButtonHandle = await page.evaluateHandle(() => {
           const communityList = document.querySelector(
             "custom-feed-community-list",
           );
@@ -278,20 +279,25 @@ class RedditCrawler {
             const editButton = communityList.shadowRoot.querySelector(
               "custom-feed-edit-button",
             );
-            if (editButton instanceof HTMLElement) {
-              editButton.click();
-              return true;
-            }
+            return editButton;
           }
-          return false;
+          return null;
         });
 
-        if (buttonClicked) {
+        // Check if we got a valid element handle
+        const isElement = await editButtonHandle.evaluate((el) => el !== null);
+
+        if (isElement) {
+          console.log("Found edit button, clicking with Playwright...");
+          // Use Playwright's native click
+          await editButtonHandle.click();
           console.log("Edit button clicked, waiting for popup...");
           await page.waitForTimeout(2000);
         } else {
           console.log("Edit button not found");
         }
+
+        await editButtonHandle.dispose();
       } catch (error) {
         console.log("Error clicking edit button:", error);
       }
