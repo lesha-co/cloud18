@@ -323,9 +323,13 @@ class RedditCrawler {
   /**
    * Visit a subreddit and extract links to other subreddits
    * @param subreddit - The subreddit to visit (without r/ prefix)
-   * @returns Array of discovered subreddits
+   * @returns Object containing discovered subreddits and subscriber count
    */
-  async crawlSubreddit(subreddit: string): Promise<string[]> {
+  async crawlSubreddit(subreddit: string): Promise<{
+    links: string[];
+    subscribers: number | null;
+    over18: boolean | null;
+  }> {
     if (!this.browser || !this.context) {
       throw new Error("Browser not initialized. Call init() first.");
     }
@@ -356,6 +360,9 @@ class RedditCrawler {
       // Extract links to other subreddits
       const subredditLinks = await this.extractSubredditLinks(page);
 
+      // Extract subscriber count
+      const meta = await this.extractMeta(subreddit);
+
       // Close the page to free resources
       await page.close();
 
@@ -365,10 +372,15 @@ class RedditCrawler {
       console.log(
         `Found ${subredditLinks.length} subreddit links on r/${normalizedSubreddit}`,
       );
-      return subredditLinks;
+      if (meta !== null) {
+        console.log(`  Subscribers: ${meta.subscribers.toLocaleString()}`);
+
+        return { links: subredditLinks, ...meta };
+      }
+      return { links: subredditLinks, subscribers: null, over18: null };
     } catch (error) {
       console.error(`Error crawling r/${subreddit}:`, error);
-      return [];
+      return { links: [], subscribers: null, over18: null };
     }
   }
 
@@ -425,6 +437,27 @@ class RedditCrawler {
       // Remove duplicates
       return [...new Set(links)];
     });
+  }
+
+  public async extractMeta(
+    subreddit: string,
+  ): Promise<{ subscribers: number; over18: boolean } | null> {
+    try {
+      const response = await fetch(
+        `https://www.reddit.com/r/${subreddit}/about.json`,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        },
+      );
+      const data = await response.json();
+      const { subscribers, over18 } = data.data;
+      return { subscribers, over18 };
+    } catch {
+      return null;
+    }
   }
 
   /**

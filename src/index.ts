@@ -58,22 +58,25 @@ try {
     );
 
     // Crawl the subreddit and get links to other subreddits
-    const discoveredSubreddits = await crawler.crawlSubreddit(subreddit);
+    const sub = await crawler.crawlSubreddit(subreddit);
+
+    // Update subscriber count if available
+    if (sub.subscribers !== null) {
+      await db.updateSubscribers(subreddit, sub.subscribers);
+    }
 
     // Add the discovered subreddits to the queue and create edges
-    for (const discovered of discoveredSubreddits) {
+    for (const discovered of sub.links) {
       await db.addToQueue(discovered);
       await db.addEdge(subreddit, discovered);
     }
 
-    console.log(
-      `Created ${discoveredSubreddits.length} edges from r/${subreddit}`,
-    );
+    console.log(`Created ${sub.links.length} edges from r/${subreddit}`);
 
     // Display some of the discovered subreddits
-    if (discoveredSubreddits.length > 0) {
+    if (sub.links.length > 0) {
       console.log("Discovered subreddits:");
-      discoveredSubreddits.forEach((sub) => console.log(`- r/${sub}`));
+      sub.links.forEach((sub) => console.log(`- r/${sub}`));
     }
 
     count++;

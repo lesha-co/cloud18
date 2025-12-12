@@ -44,6 +44,7 @@ class Database {
         CREATE TABLE IF NOT EXISTS subreddit_queue (
           subreddit TEXT PRIMARY KEY,
           visited BOOLEAN DEFAULT FALSE,
+          subscribers INTEGER DEFAULT NULL,
           added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -105,6 +106,34 @@ class Database {
         (err) => {
           if (err) {
             console.error(`Error adding edge: ${err.message}`);
+            reject(err);
+          } else {
+            resolve();
+          }
+        },
+      );
+    });
+  }
+
+  /**
+   * Update the subscriber count for a subreddit
+   * @param subreddit - The subreddit name
+   * @param subscribers - The number of subscribers
+   */
+  async updateSubscribers(
+    subreddit: string,
+    subscribers: number,
+  ): Promise<void> {
+    if (!subreddit) return;
+    const normalizedSubreddit = subreddit.toLowerCase().replace(/^r\//, "");
+
+    await new Promise<void>((resolve, reject) => {
+      this.db.run(
+        "UPDATE subreddit_queue SET subscribers = ? WHERE subreddit = ?",
+        [subscribers, normalizedSubreddit],
+        (err) => {
+          if (err) {
+            console.error(`Error updating subscribers: ${err.message}`);
             reject(err);
           } else {
             resolve();
@@ -250,6 +279,28 @@ class Database {
       yield subreddit;
       await this.markVisited(subreddit);
     }
+  }
+
+  /**
+   * Get all subreddits with missing subscriber data
+   * @returns Promise resolving to array of subreddit names
+   */
+  async getSubredditsWithoutSubscribers(): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        "SELECT subreddit FROM subreddit_queue WHERE subscribers IS NULL",
+        (err, rows) => {
+          if (err) {
+            console.error(
+              `Error getting subreddits without subscribers: ${err.message}`,
+            );
+            reject(err);
+          } else {
+            resolve(rows.map((r: any) => r.subreddit));
+          }
+        },
+      );
+    });
   }
 
   /**

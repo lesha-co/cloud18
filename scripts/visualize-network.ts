@@ -13,6 +13,7 @@ interface Edge {
 interface Node {
   id: string;
   degree: number;
+  subscribers: number | null;
 }
 
 interface GraphData {
@@ -20,27 +21,53 @@ interface GraphData {
   links: { source: string; target: string }[];
 }
 
-// Read edges from database
-async function readEdges(dbPath: string): Promise<Edge[]> {
+// Read edges and subscriber data from database
+async function readGraphData(dbPath: string): Promise<{
+  edges: Edge[];
+  subscribers: Map<string, number>;
+}> {
   return new Promise((resolve, reject) => {
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY);
 
+    let edges: Edge[] = [];
+    let subscribers = new Map<string, number>();
+
+    // Read edges
     db.all(
       "SELECT from_subreddit, to_subreddit FROM subreddit_edges",
       (err, rows: Edge[]) => {
         if (err) {
           reject(err);
-        } else {
-          resolve(rows);
+          db.close();
+          return;
         }
-        db.close();
+        edges = rows;
+
+        // Then read subscriber counts
+        db.all(
+          "SELECT subreddit, subscribers FROM subreddit_queue WHERE subscribers IS NOT NULL",
+          (err, rows: any[]) => {
+            if (err) {
+              reject(err);
+            } else {
+              rows.forEach((row) => {
+                subscribers.set(row.subreddit, row.subscribers);
+              });
+              resolve({ edges, subscribers });
+            }
+            db.close();
+          },
+        );
       },
     );
   });
 }
 
 // Process edges into nodes and links for visualization
-function processEdges(edges: Edge[]): GraphData {
+function processEdges(
+  edges: Edge[],
+  subscribers: Map<string, number>,
+): GraphData {
   const nodeMap = new Map<string, number>();
   const links: { source: string; target: string }[] = [];
 
@@ -60,10 +87,11 @@ function processEdges(edges: Edge[]): GraphData {
     });
   });
 
-  // Create nodes array with degree information
+  // Create nodes array with degree and subscriber information
   const nodes: Node[] = Array.from(nodeMap.entries()).map(([id, degree]) => ({
     id,
     degree,
+    subscribers: subscribers.get(id) || null,
   }));
 
   return { nodes, links };
@@ -192,10 +220,18 @@ function generateHTML(graphData: GraphData): string {
         const colorScale = d3.scaleSequential(d3.interpolateViridis)
             .domain([0, d3.max(graphData.nodes, d => d.degree)]);
 
-        // Create size scale for nodes based on degree
+        // Create size scale for nodes based on subscribers (with degree as fallback)
+        const maxSubscribers = d3.max(graphData.nodes, d => d.subscribers || 0);
         const sizeScale = d3.scaleSqrt()
-            .domain([1, d3.max(graphData.nodes, d => d.degree)])
-            .range([4, 20]);
+            .domain([0, maxSubscribers > 0 ? maxSubscribers : d3.max(graphData.nodes, d => d.degree)])
+            .range([4, 30]);
+
+        // Function to get node size
+        const getNodeSize = (d) => {
+            // Use subscribers if available, otherwise use degree
+            const value = d.subscribers || (d.degree * 1000); // Scale up degree if no subscriber count
+            return sizeScale(value);
+        };
 
         // Create force simulation
         const simulation = d3.forceSimulation(graphData.nodes)
@@ -204,7 +240,7 @@ function generateHTML(graphData: GraphData): string {
                 .distance(50))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
-            .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 2));
+            .force("collision", d3.forceCollide().radius(d => getNodeSize(d) + 2));
 
         // Create links
         const link = g.append("g")
@@ -219,7 +255,7 @@ function generateHTML(graphData: GraphData): string {
             .data(graphData.nodes)
             .enter().append("circle")
             .attr("class", "node")
-            .attr("r", d => sizeScale(d.degree))
+            .attr("r", d => getNodeSize(d))
             .attr("fill", d => colorScale(d.degree))
             .call(d3.drag()
                 .on("start", dragstarted)
@@ -233,7 +269,7 @@ function generateHTML(graphData: GraphData): string {
             .enter().append("text")
             .attr("class", "node-label")
             .text(d => d.id)
-            .style("font-size", d => Math.min(sizeScale(d.degree) * 0.8, 14) + "px");
+            .style("font-size", d => Math.min(getNodeSize(d) * 0.8, 14) + "px");
 
         // Tooltip
         const tooltip = d3.select("#tooltip");
@@ -250,6 +286,7 @@ function generateHTML(graphData: GraphData): string {
                     .style("top", (event.pageY - 10) + "px")
                     .html(\`
                         <strong>r/\${d.id}</strong><br>
+                        \${d.subscribers ? \`Subscribers: \${d.subscribers.toLocaleString()}<br>\` : ''}
                         Connections: \${connections}<br>
                         Degree: \${d.degree}
                     \`);
@@ -336,15 +373,26 @@ async function main() {
     const dbPath = path.join(__dirname, "..", process.env.DATABASE_FILE);
     const outputPath = path.join(__dirname, "..", "network-visualization.html");
 
-    console.log("Reading edges from database...");
-    const edges = await readEdges(dbPath);
+    console.log("Reading graph data from database...");
+    const { edges, subscribers } = await readGraphData(dbPath);
     console.log(`Found ${edges.length} edges`);
+    console.log(`Found ${subscribers.size} subreddits with subscriber data`);
 
     console.log("Processing graph data...");
-    const graphData = processEdges(edges);
+    const graphData = processEdges(edges, subscribers);
     console.log(
       `Created graph with ${graphData.nodes.length} nodes and ${graphData.links.length} links`,
     );
+
+    // Log some statistics about subscriber counts
+    const nodesWithSubs = graphData.nodes.filter((n) => n.subscribers !== null);
+    if (nodesWithSubs.length > 0) {
+      const maxSubs = Math.max(...nodesWithSubs.map((n) => n.subscribers!));
+      const minSubs = Math.min(...nodesWithSubs.map((n) => n.subscribers!));
+      console.log(
+        `Subscriber range: ${minSubs.toLocaleString()} - ${maxSubs.toLocaleString()}`,
+      );
+    }
 
     console.log("Generating HTML visualization...");
     const html = generateHTML(graphData);
@@ -358,8 +406,9 @@ async function main() {
     );
     console.log(`\nFeatures:`);
     console.log(
-      `- Nodes are sized and colored by their degree (number of connections)`,
+      `- Nodes are sized by subscriber count (when available) or degree`,
     );
+    console.log(`- Nodes are colored by their degree (number of connections)`);
     console.log(
       `- Connected nodes are pulled together by force-directed layout`,
     );

@@ -58,6 +58,33 @@ Start the crawler with:
 node --experimental-strip-types --env-file=.env src/index.ts
 ```
 
+The crawler will now automatically collect subscriber counts for each subreddit it visits.
+
+## Network Visualization
+
+Generate an interactive network visualization:
+
+```
+npm run visualize
+```
+
+This creates `network-visualization.html` with:
+- **Node size**: Based on subscriber count (when available) or degree
+- **Node color**: Based on degree (number of connections)
+- **Force-directed layout**: Connected nodes cluster together
+- **Interactive controls**: Drag nodes, zoom, adjust force parameters
+- **Tooltips**: Show subscriber count, connections, and degree
+
+## Database Migration
+
+If you have an existing database without the subscribers field, run:
+
+```
+npm run migrate
+```
+
+This will add the `subscribers` column to your existing `subreddit_queue` table.
+
 ### Default Mode (without USERNAME)
 
 If no USERNAME is provided, the crawler will:
@@ -101,6 +128,7 @@ Stores connections between subreddits:
 Tracks subreddits to be processed:
 - `subreddit`: Subreddit name
 - `visited`: Boolean flag indicating whether the subreddit has been processed
+- `subscribers`: Number of subscribers (populated when the subreddit is visited)
 - `added_at`: Timestamp when the subreddit was added to the queue
 
 ## Seed Function
@@ -124,9 +152,10 @@ This proof of concept can be expanded to:
 1. Process larger portions of the queue with configurable limits
 2. Add more error handling and rate limiting
 3. Implement parallel processing
-4. Create visualization tools for the graph
+4. ~~Create visualization tools for the graph~~ ✅ Implemented with D3.js force-directed layout
 5. Add support for crawling custom feeds and collections
 6. Implement weighted edges based on connection strength
+7. ~~Collect and visualize subscriber counts~~ ✅ Implemented - node sizes reflect community size
 
 ## License
 
