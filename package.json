@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --experimental-strip-types --env-file=.env src/index.ts",
+    "visualize": "node --experimental-strip-types --env-file=.env src/visualize-network.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
