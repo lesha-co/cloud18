@@ -45,7 +45,6 @@ class RedditCrawler {
       console.log(ctrlr_sr);
       console.log(ctrlr_items);
       console.log(items);
-      debugger;
       return items;
     });
 
@@ -262,9 +261,40 @@ class RedditCrawler {
       if (hasAgeGate) {
         console.log("Handled age verification prompt");
         // Wait for navigation after clicking the button
-        await page.waitForLoadState("domcontentloaded");
+        await page.waitForLoadState("networkidle");
+        await page.waitForSelector("custom-feed-community-list");
       }
 
+      // Try to find and click "view all" button to expand the subreddit list
+      try {
+        // Wait for the page to be fully interactive
+        await page.waitForTimeout(3000);
+
+        const buttonClicked = await page.evaluate(async () => {
+          const communityList = document.querySelector(
+            "custom-feed-community-list",
+          );
+          if (communityList && communityList.shadowRoot) {
+            const editButton = communityList.shadowRoot.querySelector(
+              "custom-feed-edit-button",
+            );
+            if (editButton instanceof HTMLElement) {
+              editButton.click();
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (buttonClicked) {
+          console.log("Edit button clicked, waiting for popup...");
+          await page.waitForTimeout(2000);
+        } else {
+          console.log("Edit button not found");
+        }
+      } catch (error) {
+        console.log("Error clicking edit button:", error);
+      }
       // Extract links to other subreddits
       const subredditLinks = await this.extractSubredditLinks(page);
 
@@ -284,53 +314,6 @@ class RedditCrawler {
     }
   }
 
-  /**
-   * Save current browser context cookies to a JSON file
-   * Useful for backing up working cookiesync crawlMultireddit(user: string, multireddit: string): Promise<string[]> {
-    if (!this.browser || !this.context) {
-      throw new Error("Browser not initialized. Call init() first.");
-    }
-
-    try {
-      const page = await this.context.newPage();
-
-      console.log(`Visiting /user/${user}/m/${multireddit}`);
-
-      // Navigate to the multireddit
-      await page.goto(`https://www.reddit.com/user/${user}/m/${multireddit}`, {
-        waitUntil: "domcontentloaded",
-      });
-
-      // Wait for some content to load
-      await page.waitForSelector("body", { timeout: 10000 });
-
-      // Check for age verification or NSFW warning
-      const hasAgeGate = await this.checkAndHandleAgeGate(page);
-
-      if (hasAgeGate) {
-        console.log("Handled age verification prompt");
-        // Wait for navigation after clicking the button
-        await page.waitForLoadState("domcontentloaded");
-      }
-
-      // Extract links to other subreddits
-      const subredditLinks = await this.extractSubredditLinks(page);
-
-      // Close the page to free resources
-      await page.close();
-
-      // Delay to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, this.delay));
-
-      console.log(
-        `Found ${subredditLinks.length} subreddits in /user/${user}/m/${multireddit}`,
-      );
-      return subredditLinks;
-    } catch (error) {
-      console.error(`Error crawling /user/${user}/m/${multireddit}:`, error);
-      return [];
-    }
-  }
   /**
    * Visit a subreddit and extract links to other subreddits
    * @param subreddit - The subreddit to visit (without r/ prefix)
@@ -422,17 +405,16 @@ class RedditCrawler {
         return null;
       };
 
-      // Get all links on the page
-      document
-        .querySelectorAll(
-          '#right-sidebar-container li a[href^="/r/"][target="_blank"]',
-        )
-        .forEach((element) => {
-          const subreddit = processLink(element.getAttribute("href"));
-          if (subreddit) {
-            links.push(subreddit);
-          }
-        });
+      document.querySelectorAll("custom-feed-community-list").forEach((list) =>
+        list
+          .querySelectorAll('li a[href^="/r/"][target="_blank"]')
+          .forEach((element) => {
+            const subreddit = processLink(element.getAttribute("href"));
+            if (subreddit) {
+              links.push(subreddit);
+            }
+          }),
+      );
 
       // Remove duplicates
       return [...new Set(links)];
