@@ -382,6 +382,9 @@ async function main() {
     if (!process.env.DATABASE_FILE) {
       throw new Error("DATABASE_FILE environment variable is not set");
     }
+    if (!process.env.OUT_NETWORK) {
+      throw new Error("DATABASE_FILE environment variable is not set");
+    }
     const dbPath = path.join(__dirname, "..", process.env.DATABASE_FILE);
     const outputPath = path.join(__dirname, "..", process.env.OUT_NETWORK);
 
