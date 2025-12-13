@@ -383,7 +383,7 @@ async function main() {
       throw new Error("DATABASE_FILE environment variable is not set");
     }
     const dbPath = path.join(__dirname, "..", process.env.DATABASE_FILE);
-    const outputPath = path.join(__dirname, "..", "network-visualization.html");
+    const outputPath = path.join(__dirname, "..", process.env.OUT_NETWORK);
 
     console.log("Reading graph data from database...");
     const { edges, subscribers, nsfw } = await readGraphData(dbPath);

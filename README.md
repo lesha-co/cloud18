@@ -156,6 +156,56 @@ This proof of concept can be expanded to:
 5. Add support for crawling custom feeds and collections
 6. Implement weighted edges based on connection strength
 7. ~~Collect and visualize subscriber counts~~ ✅ Implemented - node sizes reflect community size
+8. ~~Find clusters of connected subreddits~~ ✅ Implemented - see below
+
+## Subreddit Cluster Analysis
+
+The project includes scripts to analyze the subreddit graph and identify communities/clusters:
+
+### Analyzing Hub Communities
+
+Find subreddit hubs (highly connected subreddits) and visualize their communities:
+
+```
+DATABASE_FILE=graph.db VIZ_OUTPUT_FILE=subreddit-hubs.html npm run analyze-hubs
+```
+
+This all-in-one script:
+1. Identifies the most connected subreddit hubs based on total connections
+2. Groups other subreddits into communities based on their connections to the hubs
+3. Generates an interactive HTML visualization with:
+   - Different colors for each hub community
+   - Node sizes based on connection count
+   - Interactive controls (zoom, pan, highlight connections)
+   - Community legend with hub names and member counts
+
+The script prints analysis results to the console and saves the visualization to an HTML file.
+
+### Finding Connected Components
+
+Find strongly connected components in the graph:
+
+```
+DATABASE_FILE=graph.db OUTPUT_FILE=clusters.json npm run clusters
+```
+
+This uses a graph algorithm to:
+- Detect groups of subreddits that form connected components
+- Calculate density and other metrics for each component
+- Identify hub nodes within each component
+- Output results to `clusters.json`
+
+### Environment Variables
+
+These scripts require the following environment variables (set via `.env` file or command line):
+
+```
+DATABASE_FILE                  # Path to the SQLite database (required)
+OUTPUT_FILE                    # Output for the clusters script (required for clusters)
+VIZ_OUTPUT_FILE                # Output HTML visualization (required for analyze-hubs)
+```
+
+All environment variables are mandatory - the scripts will exit with an error if they're missing.
 
 ## License
 
