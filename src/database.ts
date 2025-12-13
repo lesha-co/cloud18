@@ -45,6 +45,7 @@ class Database {
           subreddit TEXT PRIMARY KEY,
           visited BOOLEAN DEFAULT FALSE,
           subscribers INTEGER DEFAULT NULL,
+          nsfw BOOLEAN DEFAULT NULL,
           added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -134,6 +135,31 @@ class Database {
         (err) => {
           if (err) {
             console.error(`Error updating subscribers: ${err.message}`);
+            reject(err);
+          } else {
+            resolve();
+          }
+        },
+      );
+    });
+  }
+
+  /**
+   * Update the NSFW status for a subreddit
+   * @param subreddit - The subreddit name
+   * @param nsfw - Whether the subreddit is NSFW
+   */
+  async updateNSFW(subreddit: string, nsfw: boolean): Promise<void> {
+    if (!subreddit) return;
+    const normalizedSubreddit = subreddit.toLowerCase().replace(/^r\//, "");
+
+    await new Promise<void>((resolve, reject) => {
+      this.db.run(
+        "UPDATE subreddit_queue SET nsfw = ? WHERE subreddit = ?",
+        [nsfw, normalizedSubreddit],
+        (err) => {
+          if (err) {
+            console.error(`Error updating NSFW status: ${err.message}`);
             reject(err);
           } else {
             resolve();
@@ -285,10 +311,10 @@ class Database {
    * Get all subreddits with missing subscriber data
    * @returns Promise resolving to array of subreddit names
    */
-  async getSubredditsWithoutSubscribers(): Promise<string[]> {
+  async getSubredditsWithoutMeta(): Promise<string[]> {
     return new Promise((resolve, reject) => {
       this.db.all(
-        "SELECT subreddit FROM subreddit_queue WHERE subscribers IS NULL",
+        "SELECT subreddit FROM subreddit_queue WHERE subscribers IS NULL OR nsfw IS NULL",
         (err, rows) => {
           if (err) {
             console.error(

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node --experimental-strip-types --env-file=.env src/index.ts",
     "visualize": "node --experimental-strip-types --env-file=.env scripts/visualize-network.ts",
-    "fill-subscribers": "node --experimental-strip-types --env-file=.env scripts/fill-subscriber-data.ts",
+    "fill-meta": "node --experimental-strip-types --env-file=.env scripts/fill-meta-data.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

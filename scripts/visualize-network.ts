@@ -14,6 +14,7 @@ interface Node {
   id: string;
   degree: number;
   subscribers: number | null;
+  nsfw: boolean;
 }
 
 interface GraphData {
@@ -25,12 +26,14 @@ interface GraphData {
 async function readGraphData(dbPath: string): Promise<{
   edges: Edge[];
   subscribers: Map<string, number>;
+  nsfw: Map<string, boolean>;
 }> {
   return new Promise((resolve, reject) => {
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY);
 
     let edges: Edge[] = [];
     let subscribers = new Map<string, number>();
+    let nsfw = new Map<string, boolean>();
 
     // Read edges
     db.all(
@@ -43,17 +46,22 @@ async function readGraphData(dbPath: string): Promise<{
         }
         edges = rows;
 
-        // Then read subscriber counts
+        // Then read subscriber counts and nsfw status
         db.all(
-          "SELECT subreddit, subscribers FROM subreddit_queue WHERE subscribers IS NOT NULL",
+          "SELECT subreddit, subscribers, nsfw FROM subreddit_queue",
           (err, rows: any[]) => {
             if (err) {
               reject(err);
             } else {
               rows.forEach((row) => {
-                subscribers.set(row.subreddit, row.subscribers);
+                if (row.subscribers !== null) {
+                  subscribers.set(row.subreddit, row.subscribers);
+                }
+                if (row.nsfw !== null) {
+                  nsfw.set(row.subreddit, row.nsfw === 1);
+                }
               });
-              resolve({ edges, subscribers });
+              resolve({ edges, subscribers, nsfw });
             }
             db.close();
           },
@@ -67,6 +75,7 @@ async function readGraphData(dbPath: string): Promise<{
 function processEdges(
   edges: Edge[],
   subscribers: Map<string, number>,
+  nsfw: Map<string, boolean>,
 ): GraphData {
   const nodeMap = new Map<string, number>();
   const links: { source: string; target: string }[] = [];
@@ -87,11 +96,12 @@ function processEdges(
     });
   });
 
-  // Create nodes array with degree and subscriber information
+  // Create nodes array with degree, subscriber, and nsfw information
   const nodes: Node[] = Array.from(nodeMap.entries()).map(([id, degree]) => ({
     id,
     degree,
     subscribers: subscribers.get(id) || null,
+    nsfw: nsfw.get(id) || false,
   }));
 
   return { nodes, links };
@@ -216,20 +226,21 @@ function generateHTML(graphData: GraphData): string {
 
         svg.call(zoom);
 
-        // Create color scale based on node degree
-        const colorScale = d3.scaleSequential(d3.interpolateViridis)
-            .domain([0, d3.max(graphData.nodes, d => d.degree)]);
+        // Color based on NSFW status: red for NSFW, green for non-NSFW
+        const getNodeColor = (d) => {
+            return d.nsfw ? '#ff4444' : '#44ff44';
+        };
 
-        // Create size scale for nodes based on subscribers (with degree as fallback)
+        // Create size scale for nodes based on subscribers (square root scale)
         const maxSubscribers = d3.max(graphData.nodes, d => d.subscribers || 0);
         const sizeScale = d3.scaleSqrt()
-            .domain([0, maxSubscribers > 0 ? maxSubscribers : d3.max(graphData.nodes, d => d.degree)])
-            .range([4, 30]);
+            .domain([0, maxSubscribers > 0 ? maxSubscribers : 10000])
+            .range([5, 40]);
 
-        // Function to get node size
+        // Function to get node size based on square root of subscriber count
         const getNodeSize = (d) => {
-            // Use subscribers if available, otherwise use degree
-            const value = d.subscribers || (d.degree * 1000); // Scale up degree if no subscriber count
+            // Use subscribers if available, otherwise use a default small size
+            const value = d.subscribers || 1000;
             return sizeScale(value);
         };
 
@@ -256,7 +267,7 @@ function generateHTML(graphData: GraphData): string {
             .enter().append("circle")
             .attr("class", "node")
             .attr("r", d => getNodeSize(d))
-            .attr("fill", d => colorScale(d.degree))
+            .attr("fill", d => getNodeColor(d))
             .call(d3.drag()
                 .on("start", dragstarted)
                 .on("drag", dragged)
@@ -287,6 +298,7 @@ function generateHTML(graphData: GraphData): string {
                     .html(\`
                         <strong>r/\${d.id}</strong><br>
                         \${d.subscribers ? \`Subscribers: \${d.subscribers.toLocaleString()}<br>\` : ''}
+                        NSFW: \${d.nsfw ? 'Yes' : 'No'}<br>
                         Connections: \${connections}<br>
                         Degree: \${d.degree}
                     \`);
@@ -374,12 +386,13 @@ async function main() {
     const outputPath = path.join(__dirname, "..", "network-visualization.html");
 
     console.log("Reading graph data from database...");
-    const { edges, subscribers } = await readGraphData(dbPath);
+    const { edges, subscribers, nsfw } = await readGraphData(dbPath);
     console.log(`Found ${edges.length} edges`);
     console.log(`Found ${subscribers.size} subreddits with subscriber data`);
+    console.log(`Found ${nsfw.size} subreddits with NSFW status`);
 
     console.log("Processing graph data...");
-    const graphData = processEdges(edges, subscribers);
+    const graphData = processEdges(edges, subscribers, nsfw);
     console.log(
       `Created graph with ${graphData.nodes.length} nodes and ${graphData.links.length} links`,
     );
@@ -406,9 +419,9 @@ async function main() {
     );
     console.log(`\nFeatures:`);
     console.log(
-      `- Nodes are sized by subscriber count (when available) or degree`,
+      `- Nodes are sized proportional to square root of subscriber count`,
     );
-    console.log(`- Nodes are colored by their degree (number of connections)`);
+    console.log(`- NSFW subreddits are colored red, non-NSFW are green`);
     console.log(
       `- Connected nodes are pulled together by force-directed layout`,
     );

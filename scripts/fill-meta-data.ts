@@ -9,7 +9,7 @@ const crawler = new RedditCrawler();
 
 // Get subreddits with missing data
 const database = new Database(dbPath);
-const subreddits = await database.getSubredditsWithoutSubscribers();
+const subreddits = await database.getSubredditsWithoutMeta();
 
 console.log(`Found ${subreddits.length} subreddits with missing data\n`);
 
@@ -20,7 +20,7 @@ for (const [i, subreddit] of subreddits.entries()) {
     await database.updateSubscribers(subreddit, meta.subscribers);
     await database.updateNSFW(subreddit, meta.over18);
     console.log(
-      `[${i + 1}/${subreddits.length}] r/${subreddit}: ${meta.toLocaleString()}`,
+      `[${i + 1}/${subreddits.length}] r/${subreddit}: ${meta.subscribers.toLocaleString()}, ${meta.over18 ? "NSFW" : ""}`,
     );
   } else {
     console.log(`[${i + 1}/${subreddits.length}] r/${subreddit}: failed`);
