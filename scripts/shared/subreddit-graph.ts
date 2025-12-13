@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 // Define common types
-type Edge = {
+export type Edge = {
   from_subreddit: string;
   to_subreddit: string;
 };
