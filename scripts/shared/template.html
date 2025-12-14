@@ -136,35 +136,45 @@
 
       // Color based on NSFW status: red for NSFW, green for non-NSFW
       const getNodeColor = (d) => {
-          return d.nsfw ? '#ff4444' : '#44ff44';
+          return d.meta.nsfw ? '#ff4444' : '#44ff44';
       };
 
       // Create size scale for nodes based on subscribers (square root scale)
-      const maxSubscribers = d3.max(graphData.nodes, d => d.subscribers || 0);
+      const maxSubscribers = d3.max(graphData.nodes, d => d.meta?.subs || 0);
       const sizeScale = d3.scaleSqrt()
           .domain([0, maxSubscribers > 0 ? maxSubscribers : 10000])
           .range([5, 40]);
 
       // Function to get node size based on square root of subscriber count
       const getNodeSize = (d) => {
-          // Use subscribers if available, otherwise use a default small size
-          const value = d.subscribers || 1000;
+          const value = d.meta.subs;
           return sizeScale(value);
       };
 
+      // Prepare links for D3 (convert string references to actual node references)
+      const linkData = graphData.edges.map(edge => ({
+          source: edge.from_subreddit,
+          target: edge.to_subreddit,
+          value: 1
+      }));
+
       // Create force simulation
       const simulation = d3.forceSimulation(graphData.nodes)
-          .force("link", d3.forceLink(graphData.links)
+          .force("link", d3.forceLink(linkData)
               .id(d => d.id)
-              .distance(50))
-          .force("charge", d3.forceManyBody().strength(-300))
+              .distance(d => 50 + 10 * Math.sqrt(d.source.degree + d.target.degree))
+              .strength(0.3))
+          .force("charge", d3.forceManyBody()
+              .strength(d => -150 - 10 * Math.sqrt(d.degree || 1)))
           .force("center", d3.forceCenter(width / 2, height / 2))
-          .force("collision", d3.forceCollide().radius(d => getNodeSize(d) + 2));
+          .force("collision", d3.forceCollide().radius(d => getNodeSize(d) + 3))
+          .force("x", d3.forceX(width / 2).strength(0.02))
+          .force("y", d3.forceY(height / 2).strength(0.02));
 
       // Create links
       const link = g.append("g")
           .selectAll("line")
-          .data(graphData.links)
+          .data(linkData)
           .enter().append("line")
           .attr("class", "link");
 
@@ -188,28 +198,30 @@
           .enter().append("text")
           .attr("class", "node-label")
           .text(d => d.id)
-          .style("font-size", d => Math.min(getNodeSize(d) * 0.8, 14) + "px");
+          .style("font-size", d => Math.max(8, Math.min(getNodeSize(d) * 0.7, 14)) + "px")
+
 
       // Tooltip
       const tooltip = d3.select("#tooltip");
 
       node
           .on("mouseover", (event, d) => {
-              const connections = graphData.links.filter(l =>
-                  l.source.id === d.id || l.target.id === d.id
+              // Count connections (matches degree)
+              const connections = graphData.edges.filter(l =>
+                  l.from_subreddit === d.id || l.to_subreddit === d.id
               ).length;
 
               tooltip
                   .style("display", "block")
                   .style("left", (event.pageX + 10) + "px")
                   .style("top", (event.pageY - 10) + "px")
-                  .html(\`
-                      <strong>r/\${d.id}</strong><br>
-                      \${d.subscribers ? \`Subscribers: \${d.subscribers.toLocaleString()}<br>\` : ''}
-                      NSFW: \${d.nsfw ? 'Yes' : 'No'}<br>
-                      Connections: \${connections}<br>
-                      Degree: \${d.degree}
-                  \`);
+                  .html(`
+                       <strong>r/${d.id}</strong><br>
+                       Subscribers: ${ d.meta.subs.toLocaleString()}<br>
+                       NSFW: ${d.meta.nsfw ? 'Yes' : 'No' }<br>
+                       Connections: ${connections}<br>
+                       Degree: ${d.degree}
+                  `);
           })
           .on("mouseout", () => {
               tooltip.style("display", "none");
