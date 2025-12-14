@@ -1,4 +1,5 @@
 import RedditCrawler from "./crawler.ts";
+import Database from "./database.ts";
 
 interface MultiredditInfo {
   name: string;
@@ -14,6 +15,7 @@ interface MultiredditInfo {
 export async function seed(
   username: string,
   crawler: RedditCrawler,
+  db: Database,
 ): Promise<string[]> {
   console.log(`\n=== Starting seed process for user: ${username} ===\n`);
 
@@ -43,6 +45,11 @@ export async function seed(
     );
 
     subs.concat(subreddits);
+
+    // Store each subreddit in the multireddit relationship
+    for (const subreddit of subreddits) {
+      await db.setMulti(multiredditName, subreddit);
+    }
 
     console.log(
       `  Found ${subreddits.length} subreddits in ${multiredditName}`,

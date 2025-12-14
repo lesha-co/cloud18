@@ -50,6 +50,16 @@ class Database {
         );
       `);
 
+      // Create multis table
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS multis (
+          multi_name TEXT NOT NULL,
+          subreddit_name TEXT NOT NULL,
+          added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (multi_name, subreddit_name)
+        );
+      `);
+
       // Create indexes for better performance
       this.db.run(`
         CREATE INDEX IF NOT EXISTS idx_edges_from ON subreddit_edges(from_subreddit);
@@ -59,6 +69,14 @@ class Database {
       `);
       this.db.run(`
         CREATE INDEX IF NOT EXISTS idx_queue_visited ON subreddit_queue(visited);
+      `);
+
+      // Create indexes for multis table
+      this.db.run(`
+        CREATE INDEX IF NOT EXISTS idx_multis_name ON multis(multi_name);
+      `);
+      this.db.run(`
+        CREATE INDEX IF NOT EXISTS idx_multis_subreddit ON multis(subreddit_name);
       `);
     });
   }
@@ -323,6 +341,34 @@ class Database {
             reject(err);
           } else {
             resolve(rows.map((r: any) => r.subreddit));
+          }
+        },
+      );
+    });
+  }
+
+  /**
+   * Add a subreddit to a multireddit collection
+   * @param multiName - Name of the multireddit
+   * @param subredditName - Name of the subreddit to add to the multi
+   */
+  async setMulti(multiName: string, subredditName: string): Promise<void> {
+    if (!multiName || !subredditName) return;
+
+    // Normalize subreddit name (lowercase, remove r/ prefix if present)
+    const normalizedSubreddit = subredditName.toLowerCase().replace(/^r\//, "");
+    const normalizedMulti = multiName.toLowerCase();
+
+    return new Promise<void>((resolve, reject) => {
+      this.db.run(
+        "INSERT OR REPLACE INTO multis (multi_name, subreddit_name) VALUES (?, ?)",
+        [normalizedMulti, normalizedSubreddit],
+        (err) => {
+          if (err) {
+            console.error(`Error adding to multis: ${err.message}`);
+            reject(err);
+          } else {
+            resolve();
           }
         },
       );

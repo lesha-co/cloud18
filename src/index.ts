@@ -5,19 +5,14 @@ import { seed } from "./seed.ts";
 
 try {
   // Get configuration from environment variables
-  const cookiesFilePath = process.env.COOKIES_FILE;
+
   const databaseFilePath =
     process.env.DATABASE_FILE || resolve("./reddit_graph.db");
   const delay = parseInt(process.env.DELAY || "2000", 10);
   const maxSubreddits = parseInt(process.env.MAX_SUBREDDITS || "5", 10);
 
-  if (!cookiesFilePath) {
-    console.error("Error: COOKIES_FILE environment variable not set");
-    process.exit(1);
-  }
-
   console.log("Initializing Reddit Subreddit Crawler");
-  console.log(`- Using cookies from: ${cookiesFilePath}`);
+
   console.log(`- Database path: ${databaseFilePath}`);
   console.log(`- Request delay: ${delay}ms`);
   console.log(`- Max subreddits to process: ${maxSubreddits}`);
@@ -35,10 +30,10 @@ try {
 
   // Check if we should seed from a user's multireddits
   const username = process.env.USERNAME;
-  let seeded = ["apple"];
+  let seeded: string[] = [];
   if (username) {
     console.log(`\nSeeding from user: ${username}'s multireddits...`);
-    seeded = await seed(username, crawler);
+    seeded = await seed(username, crawler, db);
   }
   db.addMultipleToQueue(seeded);
 
