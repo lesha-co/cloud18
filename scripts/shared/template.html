@@ -35,6 +35,12 @@
         stroke-width: 1px;
       }
 
+      .link.multi-link {
+        stroke: #8888ff;
+        stroke-opacity: 0.8;
+        stroke-width: 2px;
+      }
+
       .node-label {
         pointer-events: none;
         font-size: 10px;
@@ -134,8 +140,11 @@
 
       svg.call(zoom);
 
-      // Color based on NSFW status: red for NSFW, green for non-NSFW
+      // Color based on node type and NSFW status
       const getNodeColor = (d) => {
+          if (d.isMulti) {
+              return '#4444ff'; // Blue for multi nodes
+          }
           return d.meta.nsfw ? '#ff4444' : '#44ff44';
       };
 
@@ -147,6 +156,10 @@
 
       // Function to get node size based on square root of subscriber count
       const getNodeSize = (d) => {
+          if (d.isMulti) {
+              // Multi nodes slightly larger to be more visible
+              return sizeScale(d.meta.subs) * 1.5;
+          }
           const value = d.meta.subs;
           return sizeScale(value);
       };
@@ -155,15 +168,16 @@
       const linkData = graphData.edges.map(edge => ({
           source: edge.from_subreddit,
           target: edge.to_subreddit,
-          value: 1
+          value: 1,
+          type: edge.type || 'normal'
       }));
 
       // Create force simulation
       const simulation = d3.forceSimulation(graphData.nodes)
           .force("link", d3.forceLink(linkData)
               .id(d => d.id)
-              .distance(d => 50 + 10 * Math.sqrt(d.source.degree + d.target.degree))
-              .strength(0.3))
+              .distance(d => d.type === 'multi-link' ? 30 : 50 + 10 * Math.sqrt(d.source.degree + d.target.degree))
+              .strength(d => d.type === 'multi-link' ? 1.5 : 0.3))
           .force("charge", d3.forceManyBody()
               .strength(d => -150 - 10 * Math.sqrt(d.degree || 1)))
           .force("center", d3.forceCenter(width / 2, height / 2))
@@ -176,7 +190,7 @@
           .selectAll("line")
           .data(linkData)
           .enter().append("line")
-          .attr("class", "link");
+          .attr("class", d => d.type === 'multi-link' ? 'link multi-link' : 'link');
 
       // Create nodes
       const node = g.append("g")
@@ -197,7 +211,7 @@
           .data(graphData.nodes)
           .enter().append("text")
           .attr("class", "node-label")
-          .text(d => d.id)
+          .text(d => d.isMulti ? d.id.replace('multi:', 'm:') : d.id)
           .style("font-size", d => Math.max(8, Math.min(getNodeSize(d) * 0.7, 14)) + "px")
 
 
@@ -211,17 +225,22 @@
                   l.from_subreddit === d.id || l.to_subreddit === d.id
               ).length;
 
+              const tooltipContent = d.isMulti ?
+                  `<strong>Multi: ${d.id.replace('multi:', '')}</strong><br>
+                   Subreddits: ${Math.floor(d.meta.subs / 1000)}<br>
+                   Connections: ${connections}<br>
+                   Degree: ${d.degree}` :
+                  `<strong>r/${d.id}</strong><br>
+                   Subscribers: ${d.meta.subs.toLocaleString()}<br>
+                   NSFW: ${d.meta.nsfw ? 'Yes' : 'No'}<br>
+                   Connections: ${connections}<br>
+                   Degree: ${d.degree}`;
+
               tooltip
                   .style("display", "block")
                   .style("left", (event.pageX + 10) + "px")
                   .style("top", (event.pageY - 10) + "px")
-                  .html(`
-                       <strong>r/${d.id}</strong><br>
-                       Subscribers: ${ d.meta.subs.toLocaleString()}<br>
-                       NSFW: ${d.meta.nsfw ? 'Yes' : 'No' }<br>
-                       Connections: ${connections}<br>
-                       Degree: ${d.degree}
-                  `);
+                  .html(tooltipContent);
           })
           .on("mouseout", () => {
               tooltip.style("display", "none");
