@@ -11,7 +11,8 @@ const delay = parseInt(process.env.DELAY);
 assert(!isNaN(delay));
 
 const username = process.env.USERNAME;
-const db = new Database(process.env.DATABASE_FILE);
+const db = new Database();
+await db.open(process.env.DATABASE_FILE, false);
 const crawler = new RedditCrawler(
   delay,
   process.env.USERNAME,

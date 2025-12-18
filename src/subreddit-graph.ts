@@ -1,6 +1,5 @@
-import sqlite3 from "sqlite3";
-import path from "path";
 import fs from "fs";
+import Database from "./database.ts";
 
 // Define common types
 export type Edge = {
@@ -39,21 +38,15 @@ export async function loadGraphFromDatabase(dbPath: string): Promise<Graph> {
     throw new Error(`Database file not found: ${dbPath}`);
   }
 
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      throw new Error(`Error opening database: ${err.message}`);
-    }
-  });
+  const db = new Database();
+  await db.open(dbPath, true);
 
   const graph: Graph = {
     nodes: new Set<string>(),
     adjacencyList: new Map<string, Set<string>>(),
   };
 
-  const edges = (await all(
-    db,
-    "SELECT from_subreddit, to_subreddit FROM subreddit_edges",
-  )) as Edge[];
+  const edges = (await db.getAllEdges()) as Edge[];
 
   for (const edge of edges) {
     const { from_subreddit, to_subreddit } = edge;
@@ -74,7 +67,7 @@ export async function loadGraphFromDatabase(dbPath: string): Promise<Graph> {
     }
     graph.adjacencyList.get(to_subreddit)!.add(from_subreddit);
   }
-  await close(db);
+  await db.close();
   return graph;
 }
 
@@ -237,29 +230,5 @@ export function printClusters(communities: ClusterOutput[]): void {
     if (index < communities.length - 1) {
       console.log();
     }
-  });
-}
-
-export async function all(db: sqlite3.Database, query: string) {
-  return new Promise((resolve, reject) => {
-    db.all(query, (err, rows) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(rows);
-    });
-  });
-}
-
-export async function close(db: sqlite3.Database) {
-  return new Promise<void>((resolve, reject) => {
-    db.close((err) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve();
-    });
   });
 }

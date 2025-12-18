@@ -1,7 +1,8 @@
 import sqlite3 from "sqlite3";
 import fs from "node:fs/promises";
 import assert from "node:assert";
-import { all, type Edge } from "./subreddit-graph.ts";
+import { type Edge } from "./subreddit-graph.ts";
+import Database from "./database.ts";
 
 type ExtendedEdge = Edge & { type?: string };
 
@@ -19,13 +20,13 @@ interface GraphData {
 
 // Read graph data from database and process it for visualization
 async function readAndProcessGraphData(dbPath: string): Promise<GraphData> {
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY);
+  const db = new Database();
+  await db.open(dbPath, false);
   const nodeMap = new Map<string, number>();
   const meta = new Map<string, { nsfw: boolean; subs: number }>();
   const multiNodes = new Map<string, Set<string>>();
 
-  const rows = (await all(
-    db,
+  const rows = (await db.all(
     "SELECT subreddit, subscribers, nsfw FROM subreddit_queue",
   )) as any[];
 
@@ -35,8 +36,7 @@ async function readAndProcessGraphData(dbPath: string): Promise<GraphData> {
   });
 
   // Read multis from database
-  const multiRows = (await all(
-    db,
+  const multiRows = (await db.all(
     "SELECT multi_name, subreddit_name FROM multis",
   )) as any[];
 
@@ -48,10 +48,7 @@ async function readAndProcessGraphData(dbPath: string): Promise<GraphData> {
     multiNodes.get(row.multi_name)!.add(row.subreddit_name);
   });
 
-  const edges = (await all(
-    db,
-    "SELECT from_subreddit, to_subreddit FROM subreddit_edges",
-  )) as Edge[];
+  const edges = (await db.getAllEdges()) as Edge[];
   // Read edges
 
   // Add edges from multis to their subreddits
