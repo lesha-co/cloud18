@@ -4,3 +4,4 @@ node_modules/
 *.sqlite
 network-visualization.html
 .DS_Store
+graph-*.json

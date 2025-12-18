@@ -7,7 +7,8 @@
   "scripts": {
     "crawl": "node --experimental-strip-types --env-file=.env src/index.ts",
     "seed": "node --experimental-strip-types --env-file=.env src/seed.ts",
-    "visualize": "node --experimental-strip-types --env-file=.env src/visualize-network.ts",
+    "extract-data": "node --experimental-strip-types --env-file=.env src/extract-graph-data.ts",
+    "generate-viz": "node --experimental-strip-types --env-file=.env src/generate-visualization.ts",
     "list-hub-clusters": "node --experimental-strip-types --env-file=.env src/list-hub-clusters.ts",
     "test": "node --experimental-strip-types --env-file=.env src/test.ts"
   },
