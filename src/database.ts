@@ -19,19 +19,20 @@ class Database {
     }
 
     return new Promise<void>((resolve, reject) => {
-      this.db = new sqlite.Database(
-        dbPath,
-        readonly ? sqlite.OPEN_READONLY : undefined,
-        (err) => {
-          if (err) {
-            console.error(`Error opening database: ${err.message}`);
-            reject(err);
-          } else {
-            this.initDatabase();
-            resolve();
-          }
-        },
-      );
+      const callback = (err) => {
+        if (err) {
+          console.error(`Error opening database: ${err.message}`);
+          reject(err);
+        } else {
+          this.initDatabase();
+          resolve();
+        }
+      };
+      if (readonly) {
+        this.db = new sqlite.Database(dbPath, sqlite.OPEN_READONLY, callback);
+      } else {
+        this.db = new sqlite.Database(dbPath, callback);
+      }
     });
   }
 
