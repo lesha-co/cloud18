@@ -116,7 +116,73 @@
     </div>
 
     <script>
-      const graphData = %TEMPLATE%;
+      const rawData = %TEMPLATE%;
+
+      // Transform the raw graph data to visualization format
+      function transformGraphData(jsonData) {
+        // Create a map for quick ID to node lookup
+        const nodeMap = new Map();
+        jsonData.forEach((node) => {
+          nodeMap.set(node.id, node);
+        });
+
+        // Calculate degree for each node (in-degree + out-degree)
+        const inDegree = new Map();
+        jsonData.forEach((node) => {
+          // Out-degree is the length of linksTo
+          node.linksTo.forEach((targetId) => {
+            inDegree.set(targetId, (inDegree.get(targetId) || 0) + 1);
+          });
+        });
+
+        // Transform nodes
+        const nodes = jsonData.map((node) => {
+          const isMulti = node.subreddit.startsWith("multi:");
+          const nodeId = node.subreddit; // Use subreddit name as ID directly
+          const outDegree = node.linksTo.length;
+          const inDegreeCount = inDegree.get(node.id) || 0;
+          const totalDegree = outDegree + inDegreeCount;
+
+          return {
+            id: nodeId,
+            degree: totalDegree,
+            meta: {
+              nsfw: node.nsfw ? 1 : 0,
+              subs: node.subscribers ?? 0, // Use 0 if null
+            },
+            isMulti,
+          };
+        });
+
+        // Extract edges from the linksTo arrays
+        const edges = [];
+        jsonData.forEach((fromNode) => {
+          fromNode.linksTo.forEach((toNodeId) => {
+            const toNode = nodeMap.get(toNodeId);
+            if (toNode) {
+              const fromId = fromNode.subreddit;
+              const toId = toNode.subreddit;
+
+              // Determine if this is a multi-link
+              const isMultiLink =
+                fromNode.subreddit.startsWith("multi:") ||
+                toNode.subreddit.startsWith("multi:");
+
+              edges.push({
+                from_subreddit: fromId,
+                to_subreddit: toId,
+                ...(isMultiLink ? { type: "multi-link" } : {}),
+              });
+            }
+          });
+        });
+
+        return { nodes, edges };
+      }
+
+      // Transform the raw data
+      const graphData = transformGraphData(rawData);
+      console.log(`Transformed to ${graphData.nodes.length} nodes and ${graphData.edges.length} edges`);
 
       const width = window.innerWidth;
       const height = window.innerHeight;
