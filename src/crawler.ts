@@ -59,7 +59,7 @@ class RedditCrawler {
       console.log(items);
       return items;
     });
-
+    await page.close();
     // If we didn't find any multireddits in the page, try the old Reddit layout
     return multiredditNames;
   }
@@ -285,7 +285,10 @@ class RedditCrawler {
         if (isElement) {
           console.log("Found edit button, clicking with Playwright...");
           // Use Playwright's native click
-          await editButtonHandle.click();
+          const e = editButtonHandle.asElement();
+          if (e) {
+            await e.click();
+          }
           console.log("Edit button clicked, waiting for popup...");
           await page.waitForTimeout(2000);
         } else {
@@ -297,7 +300,8 @@ class RedditCrawler {
         console.log("Error clicking edit button:", error);
       }
       // Extract links to other subreddits
-      const subredditLinks = await this.extractSubredditLinks(page);
+      const subredditLinks =
+        await this.extractSubredditLinksFromMultiPopup(page);
 
       // Close the page to free resources
       await page.close();
@@ -407,6 +411,30 @@ class RedditCrawler {
     }
 
     return false;
+  }
+
+  private async extractSubredditLinksFromMultiPopup(
+    page: Page,
+  ): Promise<string[]> {
+    await page.waitForSelector("rpl-modal-card custom-feed-community-list", {
+      state: "attached",
+    });
+    const links = await page.evaluate(() => {
+      const links: string[] = [];
+
+      document
+        .querySelectorAll("rpl-modal-card custom-feed-community-list li a")
+        .forEach((element) => {
+          const subreddit = element.getAttribute("href");
+          if (subreddit && subreddit.startsWith("/r/")) {
+            links.push(subreddit.slice(3));
+          }
+        });
+
+      return links;
+      // return uniqueLinks; // here links are array of 17 items
+    });
+    return [...new Set(links)]; // here it is empty
   }
 
   /**
