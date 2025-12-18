@@ -5,6 +5,6 @@ import { getJSON } from "./get-json.ts";
 
 assert(process.env.GRAPH_DATA_FILE);
 
-const nodes = getJSON();
+const nodes = await getJSON();
 
 await fs.writeFile(process.env.GRAPH_DATA_FILE, JSON.stringify(nodes, null, 2));

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import assert from "node:assert";
-import { getJSON } from "./get-json.ts";
-import { NodeData } from "./common-types.ts";
+import { NodeData, SubredditRow } from "./common-types.ts";
+import { getJSONFromFile } from "./get-json.ts";
 
 // Type definitions
 type SubredditStats = {
@@ -19,9 +18,11 @@ type Graph = {
   adjacencyList: Map<string, Set<string>>;
 };
 
-type Community = {
-  id: number;
-  members: string[];
+type SmallSubreddit = Pick<SubredditRow, "id" | "subreddit">;
+
+type CommunityWithHub = {
+  name: SmallSubreddit;
+  members: SmallSubreddit[];
 };
 
 // Class definitions
@@ -98,14 +99,14 @@ function buildGraphFromNodeData(nodeData: NodeData[]): Graph {
 }
 
 function findHubInCommunity(
-  community: string[],
-  nodeStats: Map<string, SubredditStats>,
-): string {
+  community: SmallSubreddit[],
+  nodeStats: Map<number, SubredditStats>,
+): SmallSubreddit {
   let hub = community[0];
   let maxDegree = 0;
 
   for (const node of community) {
-    const stats = nodeStats.get(node);
+    const stats = nodeStats.get(node.id);
     if (stats && stats.totalDegree > maxDegree) {
       maxDegree = stats.totalDegree;
       hub = node;
@@ -117,8 +118,8 @@ function findHubInCommunity(
 
 export function calculateNodeStatistics(
   nodeData: NodeData[],
-): Map<string, SubredditStats> {
-  const stats = new Map<string, SubredditStats>();
+): Map<number, SubredditStats> {
+  const stats = new Map<number, SubredditStats>();
 
   // Create a map from numeric ID to subreddit name
   const idToSubreddit = new Map<number, string>();
@@ -152,7 +153,7 @@ export function calculateNodeStatistics(
       inDegree.get(subredditName) || new Set<string>(),
     );
 
-    stats.set(subredditName, {
+    stats.set(node.id, {
       name: subredditName,
       outDegree: outConnections.length,
       inDegree: inConnections.length,
@@ -165,7 +166,12 @@ export function calculateNodeStatistics(
   return stats;
 }
 
-function findAndOrganizeClusters(components: Map<string, number>): Community[] {
+export function analyzeSubredditClusters(
+  nodeData: NodeData[],
+): CommunityWithHub[] {
+  const graph = buildGraphFromNodeData(nodeData);
+  const detector = new ConnectedComponentsDetection(graph);
+  const components = detector.detect();
   const communityMembers = new Map<number, string[]>();
 
   for (const [node, communityId] of components.entries()) {
@@ -175,34 +181,46 @@ function findAndOrganizeClusters(components: Map<string, number>): Community[] {
     communityMembers.get(communityId)!.push(node);
   }
 
-  const communities: Community[] = Array.from(communityMembers.entries())
-    .map(([id, members]) => ({
-      id,
-      members: members.sort((a, b) => a.localeCompare(b)), // alphabetically
-    }))
+  // Create a map of subreddit name to SmallSubreddit
+  const subredditMap = new Map<string, SmallSubreddit>();
+  for (const node of nodeData) {
+    subredditMap.set(node.subreddit, {
+      id: node.id,
+      subreddit: node.subreddit,
+    });
+  }
+
+  // Get node statistics for finding hubs
+  const nodeStats = calculateNodeStatistics(nodeData);
+
+  const communities: CommunityWithHub[] = Array.from(communityMembers.entries())
+    .map(([id, memberNames]) => {
+      const sortedNames = memberNames.sort((a, b) => a.localeCompare(b));
+      const memberObjects = sortedNames
+        .map((name) => subredditMap.get(name))
+        .filter((member): member is SmallSubreddit => member !== undefined);
+
+      const hub = findHubInCommunity(memberObjects, nodeStats);
+
+      return {
+        name: hub,
+        members: memberObjects,
+      };
+    })
     .sort((a, b) => b.members.length - a.members.length);
 
   return communities;
 }
 
-export function analyzeSubredditClusters(nodeData: NodeData[]): Community[] {
-  const graph = buildGraphFromNodeData(nodeData);
-  const detector = new ConnectedComponentsDetection(graph);
-  const components = detector.detect();
-  return findAndOrganizeClusters(components);
-}
-
-export function printClusters(
-  communities: { members: string[]; name: string }[],
-): void {
+export function printClusters(communities: CommunityWithHub[]): void {
   communities.forEach((community, index) => {
     if (community.members.length === 0) return;
 
     console.log(
-      `- Group ${index + 1}: ${community.name} (${community.members.length} subreddits)`,
+      `- Group ${index + 1}: ${community.name.subreddit} (${community.members.length} subreddits)`,
     );
     community.members.forEach((subreddit) => {
-      console.log(`  - ${subreddit}`);
+      console.log(`  - ${subreddit.subreddit}`);
     });
     if (index < communities.length - 1) {
       console.log();
@@ -210,18 +228,16 @@ export function printClusters(
   });
 }
 
-// Main execution
-assert(process.env.DATABASE_FILE);
+export async function getHubClusters(
+  nodeDataArray: NodeData[],
+): Promise<CommunityWithHub[]> {
+  // analyzeSubredditClusters now returns CommunityWithHub[] directly
+  return analyzeSubredditClusters(nodeDataArray);
+}
 
-const nodeDataArray = await getJSON();
-const nodeStats = calculateNodeStatistics(nodeDataArray);
-const baseClusters = analyzeSubredditClusters(nodeDataArray);
-
-printClusters(
-  baseClusters
-    .map((cluster) => ({
-      name: findHubInCommunity(cluster.members, nodeStats),
-      members: cluster.members,
-    }))
-    .sort((a, b) => b.members.length - a.members.length),
-);
+// Main execution - only run when this file is executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const json = await getJSONFromFile();
+  const communities = await getHubClusters(json);
+  printClusters(communities);
+}

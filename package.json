@@ -11,6 +11,7 @@
     "extract-data": "node --env-file=.env src/analysis/extract-graph-data.ts",
     "generate-viz": "node --env-file=.env src/analysis/generate-visualization.ts",
     "list-hub-clusters": "node --env-file=.env src/analysis/list-hub-clusters.ts",
+    "mangle": "node --env-file=.env src/analysis/mangle.ts",
     "test": "node --env-file=.env src/test.ts"
   },
   "author": "",
