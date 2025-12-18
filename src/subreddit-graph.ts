@@ -35,79 +35,47 @@ type ClusterOutput = {
 
 // Load data from SQLite database
 export async function loadGraphFromDatabase(dbPath: string): Promise<Graph> {
-  return new Promise<Graph>((resolve, reject) => {
-    // Convert to absolute path if needed
-    const absolutePath = path.isAbsolute(dbPath)
-      ? dbPath
-      : path.resolve(process.cwd(), dbPath);
+  if (!fs.existsSync(dbPath)) {
+    throw new Error(`Database file not found: ${dbPath}`);
+  }
 
-    // Check if database exists
-    if (!fs.existsSync(absolutePath)) {
-      reject(`Database file not found: ${absolutePath}`);
-      return;
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      throw new Error(`Error opening database: ${err.message}`);
     }
-
-    // Open the database
-    const db = new sqlite3.Database(
-      absolutePath,
-      sqlite3.OPEN_READONLY,
-      (err) => {
-        if (err) {
-          reject(`Error opening database: ${err.message}`);
-          return;
-        }
-      },
-    );
-
-    // Create graph structure
-    const graph: Graph = {
-      nodes: new Set<string>(),
-      adjacencyList: new Map<string, Set<string>>(),
-    };
-
-    // Get all edges
-    db.all(
-      "SELECT from_subreddit, to_subreddit FROM subreddit_edges",
-      [],
-      (err, edges: Edge[]) => {
-        if (err) {
-          db.close();
-          reject(`Error querying database: ${err.message}`);
-          return;
-        }
-
-        // Add edges to graph
-        for (const edge of edges) {
-          const { from_subreddit, to_subreddit } = edge;
-
-          // Add nodes
-          graph.nodes.add(from_subreddit);
-          graph.nodes.add(to_subreddit);
-
-          // Add edge (for undirected graph)
-          if (!graph.adjacencyList.has(from_subreddit)) {
-            graph.adjacencyList.set(from_subreddit, new Set<string>());
-          }
-          graph.adjacencyList.get(from_subreddit)!.add(to_subreddit);
-
-          // For community detection, we treat the graph as undirected
-          if (!graph.adjacencyList.has(to_subreddit)) {
-            graph.adjacencyList.set(to_subreddit, new Set<string>());
-          }
-          graph.adjacencyList.get(to_subreddit)!.add(from_subreddit);
-        }
-
-        // Close the database
-        db.close((err) => {
-          if (err) {
-            reject(`Error closing database: ${err.message}`);
-            return;
-          }
-          resolve(graph);
-        });
-      },
-    );
   });
+
+  const graph: Graph = {
+    nodes: new Set<string>(),
+    adjacencyList: new Map<string, Set<string>>(),
+  };
+
+  const edges = (await all(
+    db,
+    "SELECT from_subreddit, to_subreddit FROM subreddit_edges",
+  )) as Edge[];
+
+  for (const edge of edges) {
+    const { from_subreddit, to_subreddit } = edge;
+
+    // Add nodes
+    graph.nodes.add(from_subreddit);
+    graph.nodes.add(to_subreddit);
+
+    // Add edge (for undirected graph)
+    if (!graph.adjacencyList.has(from_subreddit)) {
+      graph.adjacencyList.set(from_subreddit, new Set<string>());
+    }
+    graph.adjacencyList.get(from_subreddit)!.add(to_subreddit);
+
+    // For community detection, we treat the graph as undirected
+    if (!graph.adjacencyList.has(to_subreddit)) {
+      graph.adjacencyList.set(to_subreddit, new Set<string>());
+    }
+    graph.adjacencyList.get(to_subreddit)!.add(from_subreddit);
+  }
+  await close(db);
+  return graph;
 }
 
 // Connected Components Detection
@@ -269,5 +237,29 @@ export function printClusters(communities: ClusterOutput[]): void {
     if (index < communities.length - 1) {
       console.log();
     }
+  });
+}
+
+export async function all(db: sqlite3.Database, query: string) {
+  return new Promise((resolve, reject) => {
+    db.all(query, (err, rows) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(rows);
+    });
+  });
+}
+
+export async function close(db: sqlite3.Database) {
+  return new Promise<void>((resolve, reject) => {
+    db.close((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   });
 }

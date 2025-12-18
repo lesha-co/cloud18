@@ -7,7 +7,7 @@ import {
   calculateNodeStatistics,
   findHubInCommunity,
   printClusters,
-} from "./shared/subreddit-graph.ts";
+} from "./subreddit-graph.ts";
 
 assert(process.env.DATABASE_FILE);
 

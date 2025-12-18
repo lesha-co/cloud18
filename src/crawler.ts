@@ -1,13 +1,25 @@
 import { firefox } from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
+import { sleep } from "./sleep.ts";
 
 class RedditCrawler {
-  private delay: number;
   public browser: Browser | null = null;
   public context: BrowserContext | null = null;
+  private delay: number;
+  private username: string;
+  private password: string;
+  private headless: boolean;
 
-  constructor(delay = 2000) {
+  constructor(
+    delay: number,
+    username: string,
+    password: string,
+    headless: boolean,
+  ) {
+    this.username = username;
+    this.password = password;
     this.delay = delay;
+    this.headless = headless;
   }
 
   async findMultis(username: string): Promise<string[]> {
@@ -59,7 +71,7 @@ class RedditCrawler {
     try {
       // Launch browser in non-headless mode to see what's happening
       this.browser = await firefox.launch({
-        headless: process.env.HEADLESS === "true",
+        headless: this.headless,
       });
 
       // Create context with Reddit-like user agent and viewport
@@ -88,15 +100,6 @@ class RedditCrawler {
       throw new Error("Browser context not initialized");
     }
 
-    const username = process.env.USERNAME;
-    const password = process.env.PASSWORD;
-
-    if (!username || !password) {
-      throw new Error(
-        "USERNAME and PASSWORD environment variables must be set",
-      );
-    }
-
     const page = await this.context.newPage();
 
     try {
@@ -113,13 +116,8 @@ class RedditCrawler {
 
       console.log("Filling login form...");
 
-      // Fill in the username
-      await page.fill('input[name="username"]', username);
-
-      // Fill in the password
-      await page.fill('input[name="password"]', password);
-
-      // Small delay to ensure form is ready
+      await page.fill('input[name="username"]', this.username);
+      await page.fill('input[name="password"]', this.password);
       await page.waitForTimeout(500);
 
       // Find and click the login button - try multiple selectors
@@ -162,10 +160,7 @@ class RedditCrawler {
         });
         console.log("Redirected from login page");
 
-        // Give Reddit time to establish the session
         await page.waitForTimeout(3000);
-
-        // Wait for the page to fully load
         await page.waitForLoadState("domcontentloaded");
 
         // Try to wait for user indicator elements
@@ -213,7 +208,7 @@ class RedditCrawler {
       });
 
       if (isLoggedIn) {
-        console.log(`Successfully logged in as ${username}`);
+        console.log(`Successfully logged in`);
       } else {
         // Check if there's an error message
         const errorMessage = await page.evaluate(() => {
@@ -327,9 +322,25 @@ class RedditCrawler {
    */
   async crawlSubreddit(subreddit: string): Promise<{
     links: string[];
-    subscribers: number | null;
-    over18: boolean | null;
+    meta: { subscribers: number; over18: boolean } | null;
   }> {
+    if (!this.context) {
+      throw new Error("Browser not initialized. Call init() first.");
+    }
+
+    // Extract metadata first to check if NSFW
+    const meta = await this.extractMeta(subreddit, this.context);
+
+    if (meta && !meta.over18) {
+      console.log(
+        `Skipping link extraction for non-NSFW subreddit r/${subreddit}`,
+      );
+      return {
+        links: [],
+        meta,
+      };
+    }
+
     if (!this.browser || !this.context) {
       throw new Error("Browser not initialized. Call init() first.");
     }
@@ -357,30 +368,24 @@ class RedditCrawler {
         await page.waitForLoadState("domcontentloaded");
       }
 
-      // Extract links to other subreddits
-      const subredditLinks = await this.extractSubredditLinks(page);
-
-      // Extract subscriber count
-      const meta = await this.extractMeta(subreddit);
+      // Only extract links to other subreddits if this is an NSFW subreddit
+      let subredditLinks = await this.extractSubredditLinks(page);
 
       // Close the page to free resources
       await page.close();
-
-      // Delay to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, this.delay));
+      await sleep(this.delay);
 
       console.log(
         `Found ${subredditLinks.length} subreddit links on r/${normalizedSubreddit}`,
       );
       if (meta !== null) {
         console.log(`  Subscribers: ${meta.subscribers.toLocaleString()}`);
-
-        return { links: subredditLinks, ...meta };
+        return { links: subredditLinks, meta };
       }
-      return { links: subredditLinks, subscribers: null, over18: null };
+      return { links: subredditLinks, meta: null };
     } catch (error) {
       console.error(`Error crawling r/${subreddit}:`, error);
-      return { links: [], subscribers: null, over18: null };
+      return { links: [], meta: null };
     }
   }
 
@@ -408,50 +413,44 @@ class RedditCrawler {
    * Extract links to other subreddits from the page
    */
   private async extractSubredditLinks(page: Page): Promise<string[]> {
-    return page.evaluate(() => {
+    await page.waitForSelector("aside li a");
+    const links = await page.evaluate(() => {
       const links: string[] = [];
 
-      // Process a link to see if it's a subreddit link
-      const processLink = (link: string | null): string | null => {
-        if (!link) return null;
+      document
+        .querySelectorAll("aside li a[href^='/r/'][target='_blank']")
+        .forEach((element) => {
+          const subreddit = element.getAttribute("href");
+          if (subreddit && subreddit.startsWith("/r/")) {
+            links.push(subreddit.slice(3));
+          }
+        });
 
-        // Parse subreddit from href
-        const match = link.match(/\/r\/([a-zA-Z0-9_]+)(?:\/|\?|$)/);
-        if (match && match[1]) {
-          return match[1].toLowerCase();
-        }
-        return null;
-      };
-
-      document.querySelectorAll("custom-feed-community-list").forEach((list) =>
-        list
-          .querySelectorAll('li a[href^="/r/"][target="_blank"]')
-          .forEach((element) => {
-            const subreddit = processLink(element.getAttribute("href"));
-            if (subreddit) {
-              links.push(subreddit);
-            }
-          }),
-      );
-
-      // Remove duplicates
-      return [...new Set(links)];
+      return links;
+      // return uniqueLinks; // here links are array of 17 items
     });
+    return [...new Set(links)]; // here it is empty
   }
 
   public async extractMeta(
     subreddit: string,
+    context: BrowserContext,
   ): Promise<{ subscribers: number; over18: boolean } | null> {
     try {
-      const response = await fetch(
-        `https://www.reddit.com/r/${subreddit}/about.json`,
-        {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          },
+      const url = `https://www.reddit.com/r/${subreddit}/about.json`;
+      const cookies = await context.cookies(url);
+      const response = await fetch(url, {
+        headers: {
+          cookie: cookies
+            .map((cookie) => `${cookie.name}=${cookie.value}`)
+            .join("; "),
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
-      );
+      });
+      if (!response.ok) {
+        debugger;
+      }
       const data = await response.json();
       const { subscribers, over18 } = data.data;
       return { subscribers, over18 };

@@ -38,7 +38,6 @@ This initial version is a minimal proof of concept that:
    COOKIES_FILE=/path/to/your/firefox/profile/cookies.sqlite
    DATABASE_FILE=reddit_graph.db
    DELAY=2000
-   MAX_SUBREDDITS=5
    USERNAME=your_reddit_username  # Optional: seed from a user's multireddits
    ```
 
@@ -91,7 +90,6 @@ If no USERNAME is provided, the crawler will:
 1. Initialize the database
 2. Add "apple" subreddit to the queue
 3. Iterate through unvisited subreddits using a generator function
-4. Process each subreddit page up to the MAX_SUBREDDITS limit
 5. Extract links to other subreddits
 6. Add discovered subreddits to the queue
 7. Create edges between subreddits in the database

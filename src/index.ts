@@ -1,92 +1,61 @@
 import RedditCrawler from "./crawler.ts";
 import Database from "./database.ts";
-import { resolve } from "node:path";
-import { seed } from "./seed.ts";
 
-try {
-  // Get configuration from environment variables
+import assert from "node:assert";
+import { sleep } from "./sleep.ts";
 
-  const databaseFilePath =
-    process.env.DATABASE_FILE || resolve("./reddit_graph.db");
-  const delay = parseInt(process.env.DELAY || "2000", 10);
-  const maxSubreddits = parseInt(process.env.MAX_SUBREDDITS || "5", 10);
+assert(process.env.DATABASE_FILE);
+assert(process.env.DELAY);
+assert(process.env.USERNAME);
+assert(process.env.PASSWORD);
 
-  console.log("Initializing Reddit Subreddit Crawler");
+const delay = parseInt(process.env.DELAY);
+assert(!isNaN(delay));
 
-  console.log(`- Database path: ${databaseFilePath}`);
-  console.log(`- Request delay: ${delay}ms`);
-  console.log(`- Max subreddits to process: ${maxSubreddits}`);
+const db = new Database(process.env.DATABASE_FILE);
+const crawler = new RedditCrawler(
+  delay,
+  process.env.USERNAME,
+  process.env.PASSWORD,
+  process.env.HEADLESS === "true",
+);
+await crawler.init();
 
-  // Initialize database
-  const db = new Database(databaseFilePath);
+// Process subreddits using the generator
+let count = 0;
+for await (const subreddit of db.getUnvisitedGenerator()) {
+  await sleep(delay);
 
-  // Add initial "apple" subreddit to the queue
-  // await db.addToQueue("apple");
-  // console.log('Added initial subreddit "apple" to queue');
+  console.log(`${count + 1}/${await db.getUnvisitedCount()}: r/${subreddit}`);
 
-  // Initialize crawler
-  const crawler = new RedditCrawler(delay);
-  await crawler.init();
+  const sub = await crawler.crawlSubreddit(subreddit);
 
-  // Check if we should seed from a user's multireddits
-  const username = process.env.USERNAME;
-  let seeded: string[] = [];
-  if (username) {
-    console.log(`\nSeeding from user: ${username}'s multireddits...`);
-    seeded = await seed(username, crawler, db);
-  }
-  db.addMultipleToQueue(seeded);
-
-  // Process subreddits using the generator
-  let count = 0;
-  for await (const subreddit of db.getUnvisitedGenerator()) {
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    if (count >= maxSubreddits) {
-      console.log(
-        `Reached maximum subreddit limit (${maxSubreddits}). Stopping.`,
-      );
-      break;
-    }
-
-    console.log(
-      `Processing subreddit ${count + 1}/${maxSubreddits}: r/${subreddit}`,
-    );
-
-    // Crawl the subreddit and get links to other subreddits
-    const sub = await crawler.crawlSubreddit(subreddit);
-
-    // Update subscriber count if available
-    if (sub.subscribers !== null) {
-      await db.updateSubscribers(subreddit, sub.subscribers);
-    }
-
-    // Add the discovered subreddits to the queue and create edges
-    for (const discovered of sub.links) {
-      await db.addToQueue(discovered);
-      await db.addEdge(subreddit, discovered);
-    }
-
-    console.log(`Created ${sub.links.length} edges from r/${subreddit}`);
-
-    // Display some of the discovered subreddits
-    if (sub.links.length > 0) {
-      console.log("Discovered subreddits:");
-      sub.links.forEach((sub) => console.log(`- r/${sub}`));
-    }
-
-    count++;
+  if (sub.meta !== null) {
+    await db.updateSubscribers(subreddit, sub.meta.subscribers);
+    await db.updateNSFW(subreddit, sub.meta.over18);
   }
 
-  // Report final stats
-  const remainingCount = await db.getUnvisitedCount();
-  console.log(`\nCrawling completed.`);
-  console.log(`Processed ${count} subreddits.`);
-  console.log(`${remainingCount} subreddits remaining in queue.`);
+  for (const discovered of sub.links) {
+    await db.addToQueue(discovered);
+    await db.addEdge(subreddit, discovered);
+  }
+  console.log(`Created ${sub.links.length} edges from r/${subreddit}`);
 
-  // Cleanup
-  await crawler.close();
-  db.close();
-} catch (error) {
-  console.error("Error in main process:", error);
-  process.exit(1);
+  // Display some of the discovered subreddits
+  if (sub.links.length > 0) {
+    console.log("Discovered subreddits:");
+    sub.links.forEach((sub) => console.log(`- r/${sub}`));
+  }
+
+  count++;
 }
+
+// Report final stats
+const remainingCount = await db.getUnvisitedCount();
+console.log(`\nCrawling completed.`);
+console.log(`Processed ${count} subreddits.`);
+console.log(`${remainingCount} subreddits remaining in queue.`);
+
+// Cleanup
+await crawler.close();
+db.close();

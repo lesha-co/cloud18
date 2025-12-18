@@ -5,12 +5,11 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types --env-file=.env src/index.ts",
-    "visualize": "node --experimental-strip-types --env-file=.env scripts/visualize-network.ts",
-    "fill-meta": "node --experimental-strip-types --env-file=.env scripts/fill-meta-data.ts",
-    "list-clusters": "node --experimental-strip-types --env-file=.env scripts/list-subreddit-clusters.ts",
-    "list-hub-clusters": "node --experimental-strip-types --env-file=.env scripts/list-hub-clusters.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "crawl": "node --experimental-strip-types --env-file=.env src/index.ts",
+    "seed": "node --experimental-strip-types --env-file=.env src/seed.ts",
+    "visualize": "node --experimental-strip-types --env-file=.env src/visualize-network.ts",
+    "list-hub-clusters": "node --experimental-strip-types --env-file=.env src/list-hub-clusters.ts",
+    "test": "node --experimental-strip-types --env-file=.env src/test.ts"
   },
   "author": "",
   "license": "ISC",

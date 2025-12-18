@@ -87,7 +87,7 @@ class Database {
    */
   async addToQueue(subreddit: string): Promise<void> {
     if (!subreddit) return;
-    // Normalize subreddit name (lowercase, remove r/ prefix if present)
+
     const normalizedSubreddit = subreddit.toLowerCase().replace(/^r\//, "");
 
     await new Promise<void>((resolve, reject) => {
@@ -355,7 +355,6 @@ class Database {
   async setMulti(multiName: string, subredditName: string): Promise<void> {
     if (!multiName || !subredditName) return;
 
-    // Normalize subreddit name (lowercase, remove r/ prefix if present)
     const normalizedSubreddit = subredditName.toLowerCase().replace(/^r\//, "");
     const normalizedMulti = multiName.toLowerCase();
 

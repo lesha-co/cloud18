@@ -1,7 +1,7 @@
 import sqlite3 from "sqlite3";
 import fs from "node:fs/promises";
 import assert from "node:assert";
-import type { Edge } from "./shared/subreddit-graph.ts";
+import { all, type Edge } from "./subreddit-graph.ts";
 
 type ExtendedEdge = Edge & { type?: string };
 
@@ -15,18 +15,6 @@ interface Node {
 interface GraphData {
   nodes: Node[];
   edges: ExtendedEdge[];
-}
-
-async function all(db: sqlite3.Database, query: string) {
-  return new Promise((resolve, reject) => {
-    db.all(query, (err, rows) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(rows);
-    });
-  });
 }
 
 // Read graph data from database and process it for visualization
@@ -128,7 +116,7 @@ async function readAndProcessGraphData(dbPath: string): Promise<GraphData> {
 
 // Generate HTML with D3.js visualization
 async function generateHTML(graphData: GraphData) {
-  const template = await fs.readFile("scripts/shared/template.html", "utf-8");
+  const template = await fs.readFile("src/template.html", "utf-8");
   return template.replace("%TEMPLATE%", JSON.stringify(graphData));
 }
 
