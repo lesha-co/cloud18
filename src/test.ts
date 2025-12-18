@@ -1,10 +1,8 @@
 // /r/ActualYuri.
 import RedditCrawler from "./crawl/crawler.ts";
-import Database from "./database/database.ts";
 
 import assert from "node:assert";
 
-assert(process.env.DATABASE_FILE);
 assert(process.env.DELAY);
 assert(process.env.USERNAME);
 assert(process.env.PASSWORD);

@@ -212,16 +212,21 @@ export function analyzeSubredditClusters(
   return communities;
 }
 
-export function printClusters(communities: CommunityWithHub[]): void {
+export function printClusters(
+  communities: CommunityWithHub[],
+  condensed = false,
+): void {
   communities.forEach((community, index) => {
     if (community.members.length === 0) return;
 
     console.log(
       `- Group ${index + 1}: ${community.name.subreddit} (${community.members.length} subreddits)`,
     );
-    community.members.forEach((subreddit) => {
-      console.log(`  - ${subreddit.subreddit}`);
-    });
+    (condensed ? community.members.slice(0, 20) : community.members).forEach(
+      (subreddit) => {
+        console.log(`  - ${subreddit.subreddit}`);
+      },
+    );
     if (index < communities.length - 1) {
       console.log();
     }
@@ -239,5 +244,5 @@ export async function getHubClusters(
 if (import.meta.url === `file://${process.argv[1]}`) {
   const json = await getJSONFromFile();
   const communities = await getHubClusters(json);
-  printClusters(communities);
+  printClusters(communities, true);
 }

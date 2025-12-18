@@ -3,12 +3,14 @@
 import assert from "node:assert";
 import { getJSONFromFile } from "./get-json.ts";
 import { NodeData } from "./common-types.ts";
-import { getHubClusters } from "./list-hub-clusters.ts";
+import { getHubClusters, printClusters } from "./list-hub-clusters.ts";
 import fs from "node:fs/promises";
 assert(process.env.GRAPH_DATA_FILE);
 
 const allNodeData = await getJSONFromFile();
-const largestCommunity = (await getHubClusters(allNodeData))[0];
+const clusters = await getHubClusters(allNodeData);
+printClusters(clusters, true);
+const largestCommunity = clusters[0];
 assert(largestCommunity);
 const communityMembersSubs = new Set(
   largestCommunity.members.map((x) => x.subreddit),

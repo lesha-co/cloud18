@@ -83,6 +83,50 @@
       #controls input {
         margin-left: 10px;
       }
+
+      #controls button {
+        background: #444;
+        color: white;
+        border: 1px solid #666;
+        padding: 8px 15px;
+        border-radius: 3px;
+        cursor: pointer;
+        margin-top: 10px;
+        width: 100%;
+        font-size: 12px;
+      }
+
+      #controls button:hover {
+        background: #555;
+      }
+
+      #simulationStatus {
+        margin-top: 15px;
+        padding: 8px;
+        border-radius: 3px;
+        text-align: center;
+        font-size: 11px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+      }
+
+      #simulationStatus.running {
+        background: rgba(0, 255, 0, 0.2);
+        border: 1px solid #0f0;
+        color: #0f0;
+      }
+
+      #simulationStatus.stopped {
+        background: rgba(255, 0, 0, 0.2);
+        border: 1px solid #f00;
+        color: #f00;
+      }
+
+      #simulationStatus.slowing {
+        background: rgba(255, 255, 0, 0.2);
+        border: 1px solid #ff0;
+        color: #ff0;
+      }
     </style>
   </head>
   <body>
@@ -113,6 +157,16 @@
         />
         <span id="chargeForceValue">-300</span>
       </label>
+      <label style="display: flex; align-items: center; margin-top: 15px">
+        <input
+          type="checkbox"
+          id="continuousMode"
+          style="margin-left: 0; margin-right: 10px"
+        />
+        Continuous Simulation
+      </label>
+      <button id="restartSimulation">Restart Simulation</button>
+      <div id="simulationStatus" class="stopped">SIMULATION: STOPPED</div>
     </div>
 
     <script>
@@ -239,7 +293,10 @@
           .force("center", d3.forceCenter(width / 2, height / 2))
           .force("collision", d3.forceCollide().radius(d => getNodeSize(d) + 3))
           .force("x", d3.forceX(width / 2).strength(0.02))
-          .force("y", d3.forceY(height / 2).strength(0.02));
+          .force("y", d3.forceY(height / 2).strength(0.02))
+          .alphaDecay(0.01) // Slower decay (default ~0.0228) - simulation runs longer
+          .alphaMin(0.0001) // Lower minimum alpha (default 0.001) - runs until more settled
+          .velocityDecay(0.3); // Less friction (default 0.4) - smoother movement
 
       const link = g.append("g")
           .selectAll("line")
@@ -297,6 +354,26 @@
               tooltip.style("display", "none");
           });
 
+      // Status indicator element
+      const statusIndicator = document.getElementById('simulationStatus');
+
+      // Update simulation status
+      function updateSimulationStatus() {
+          const alpha = simulation.alpha();
+          const alphaMin = simulation.alphaMin();
+
+          if (alpha <= alphaMin) {
+              statusIndicator.textContent = 'SIMULATION: STOPPED';
+              statusIndicator.className = 'stopped';
+          } else if (alpha < 0.05) {
+              statusIndicator.textContent = `SIMULATION: SETTLING (α=${alpha.toFixed(4)})`;
+              statusIndicator.className = 'slowing';
+          } else {
+              statusIndicator.textContent = `SIMULATION: RUNNING (α=${alpha.toFixed(4)})`;
+              statusIndicator.className = 'running';
+          }
+      }
+
       // Update positions on tick
       simulation.on("tick", () => {
           link
@@ -312,6 +389,23 @@
           label
               .attr("x", d => d.x)
               .attr("y", d => d.y);
+
+          // Update status on every tick
+          updateSimulationStatus();
+      });
+
+      // Also check status periodically when simulation stops
+      simulation.on("end", () => {
+          updateSimulationStatus();
+
+          // Check if continuous mode is enabled
+          const continuousMode = document.getElementById('continuousMode');
+          if (continuousMode.checked) {
+              // Restart simulation with a moderate alpha value
+              setTimeout(() => {
+                  simulation.alpha(0.3).restart();
+              }, 100); // Small delay to prevent immediate restart loops
+          }
       });
 
       // Drag functions
@@ -350,6 +444,21 @@
           chargeForceValue.textContent = value;
           simulation.force("charge").strength(+value);
           simulation.alpha(0.3).restart();
+      });
+
+      // Restart button
+      const restartButton = document.getElementById('restartSimulation');
+      restartButton.addEventListener('click', () => {
+          simulation.alpha(1).restart(); // Full restart with alpha = 1
+      });
+
+      // Continuous mode toggle
+      const continuousModeCheckbox = document.getElementById('continuousMode');
+      continuousModeCheckbox.addEventListener('change', (e) => {
+          if (e.target.checked && simulation.alpha() <= simulation.alphaMin()) {
+              // If enabling continuous mode and simulation is stopped, restart it
+              simulation.alpha(0.3).restart();
+          }
       });
 
       // Keyboard shortcuts
