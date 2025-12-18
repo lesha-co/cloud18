@@ -321,7 +321,6 @@ class Database {
         break;
       }
       yield subreddit;
-      await this.markVisited(subreddit);
     }
   }
 

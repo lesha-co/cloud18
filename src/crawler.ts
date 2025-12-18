@@ -413,7 +413,7 @@ class RedditCrawler {
    * Extract links to other subreddits from the page
    */
   private async extractSubredditLinks(page: Page): Promise<string[]> {
-    await page.waitForSelector("aside li a");
+    await page.waitForSelector("aside li a", { state: "attached" });
     const links = await page.evaluate(() => {
       const links: string[] = [];
 

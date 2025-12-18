@@ -46,7 +46,7 @@ for await (const subreddit of db.getUnvisitedGenerator()) {
     console.log("Discovered subreddits:");
     sub.links.forEach((sub) => console.log(`- r/${sub}`));
   }
-
+  await db.markVisited(subreddit);
   count++;
 }
 
