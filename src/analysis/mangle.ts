@@ -1,26 +1,28 @@
-#!/usr/bin/env node
+/**
+ * This code shuffles IDs of entries so that it's impossible to discern
+ * the initial subreddits
+ */
 
 import assert from "node:assert";
 import { getJSONFromFile } from "./get-json.ts";
 import { NodeData } from "./common-types.ts";
-import { getHubClusters, printClusters } from "./list-hub-clusters.ts";
+import { getHubClusters } from "./list-hub-clusters.ts";
 import fs from "node:fs/promises";
 assert(process.env.GRAPH_DATA_FILE);
 
-const allNodeData = await getJSONFromFile();
+const allNodeData = await getJSONFromFile(process.env.GRAPH_DATA_FILE);
 const clusters = await getHubClusters(allNodeData);
-printClusters(clusters, true);
-const largestCommunity = clusters[0];
-assert(largestCommunity);
-const communityMembersSubs = new Set(
-  largestCommunity.members.map((x) => x.subreddit),
-);
-const communityMembersIds = new Set(largestCommunity.members.map((x) => x.id));
-// Get all node data
 
-// Create a set of subreddit names in the largest community for fast lookup
+// selecting members from clusters with > 10
+const selectedMembers = clusters
+  .filter((x) => x.members.length > 10)
+  .flatMap((x) => x.members);
 
-// Filter node data to only include nodes from the largest community
+// building indexes for quick lookup
+const communityMembersSubs = new Set(selectedMembers.map((x) => x.subreddit));
+const communityMembersIds = new Set(selectedMembers.map((x) => x.id));
+
+// removing anything that is not selected
 const filteredNodeData: NodeData[] = allNodeData.filter((node) =>
   communityMembersSubs.has(node.subreddit),
 );
@@ -29,40 +31,34 @@ console.log(
   `Filtered from ${allNodeData.length} to ${filteredNodeData.length} nodes`,
 );
 
-// Create the Mangle map: original ID -> shuffled ID
-const Mangle = new Map<number, number>();
-
-// Get all IDs from the filtered data
-
-// Create a shuffled copy of the IDs
+// original ids will have "holes" i.e. 1,2,4,6,10 because we've removed some of them
+const mangledIDs = new Map<number, number>();
+// new ids will not so that the consumer will not know how many there were and if there
+const newIds = new Array(filteredNodeData.length)
+  .fill(0)
+  .map((_, index) => index);
+// shuffling and mapping original to new ones
 const shuffledIds = [...filteredNodeData.map((node) => node.id)];
 for (let i = shuffledIds.length - 1; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
   [shuffledIds[i], shuffledIds[j]] = [shuffledIds[j], shuffledIds[i]];
 }
-const newIds = new Array(shuffledIds.length).fill(0).map((_, index) => index);
 
-// Map original IDs to shuffled IDs
 shuffledIds.forEach((originalId, index) => {
-  Mangle.set(originalId, newIds[index]);
+  mangledIDs.set(originalId, newIds[index]);
 });
 
-// Apply the mangle mapping to create new node data
 const mangledNodeData: NodeData[] = filteredNodeData.map((node) => {
-  const newId = Mangle.get(node.id);
+  const newId = mangledIDs.get(node.id);
   assert(newId !== undefined);
 
-  // Map the linksTo array to new IDs, but only keep links within the community
+  // mangledIDs only have keys for selected subs
+  // so map will return undefined for links outside
+  // in current script that shouldn't be the case because I'm selecting
+  // one (or several) groups that are self-contained
   const newLinksTo = node.linksTo
-    .map((targetId) => {
-      // Check if the target is in our filtered set
-
-      if (!communityMembersIds.has(targetId)) {
-        return undefined; // Skip links outside the community
-      }
-      return Mangle.get(targetId);
-    })
-    .filter((id): id is number => id !== undefined);
+    .map((targetId) => mangledIDs.get(targetId))
+    .filter((id) => id !== undefined);
 
   return {
     ...node,
@@ -71,7 +67,6 @@ const mangledNodeData: NodeData[] = filteredNodeData.map((node) => {
   };
 });
 
-// Sort by new ID for consistency
 mangledNodeData.sort((a, b) => a.id - b.id);
 
 await fs.writeFile(
