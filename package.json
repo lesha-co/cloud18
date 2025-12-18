@@ -16,7 +16,8 @@
   "license": "ISC",
   "dependencies": {
     "playwright": "^1.57.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/node": "^25.0.1",
