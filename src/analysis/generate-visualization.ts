@@ -1,22 +1,23 @@
+/**
+ * this script gets data from a json dump and puts it into html template
+ * template has this placeholder line:
+ * <script>
+ *     const rawData = %TEMPLATE%;
+ * </script>
+ */
+
 import fs from "node:fs/promises";
 import assert from "node:assert";
-import z from "zod";
-import { NodeData } from "./common-types.ts";
+import { getJSONFromFile } from "./get-json.ts";
 
 assert(process.env.GRAPH_DATA_FILE);
 assert(process.env.OUT_NETWORK);
 assert(process.env.TEMPLATE_FILE);
 
-async function generateHTML(
-  graphData: NodeData[],
-  templatePath: string,
-): Promise<string> {
-  const template = await fs.readFile(templatePath, "utf-8");
-  return template.replace("%TEMPLATE%", JSON.stringify(graphData));
-}
+const jsonData = getJSONFromFile(process.env.GRAPH_DATA_FILE);
+const template = await fs.readFile(process.env.TEMPLATE_FILE, "utf-8");
 
-// Main execution
-const jsonContent = await fs.readFile(process.env.GRAPH_DATA_FILE, "utf-8");
-const jsonData = z.array(NodeData).parse(JSON.parse(jsonContent));
-const html = await generateHTML(jsonData, process.env.TEMPLATE_FILE);
-await fs.writeFile(process.env.OUT_NETWORK, html);
+await fs.writeFile(
+  process.env.OUT_NETWORK,
+  template.replace("%TEMPLATE%", JSON.stringify(jsonData)),
+);

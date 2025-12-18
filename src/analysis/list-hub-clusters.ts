@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import assert from "node:assert";
 import { NodeData, SubredditRow } from "./common-types.ts";
 import { getJSONFromFile } from "./get-json.ts";
 
@@ -242,7 +243,8 @@ export async function getHubClusters(
 
 // Main execution - only run when this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const json = await getJSONFromFile();
+  assert(process.env.GRAPH_DATA_FILE);
+  const json = await getJSONFromFile(process.env.GRAPH_DATA_FILE);
   const communities = await getHubClusters(json);
   printClusters(communities, true);
 }
