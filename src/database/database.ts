@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import assert from "node:assert";
 import z from "zod";
+import { SubredditRow } from "../analysis/common-types.ts";
 
 const sqlite = sqlite3.verbose();
 
@@ -20,7 +21,7 @@ class Database {
     }
 
     return new Promise<void>((resolve, reject) => {
-      const callback = (err) => {
+      const callback = (err: Error | null) => {
         if (err) {
           console.error(`Error opening database: ${err.message}`);
           reject(err);
@@ -106,62 +107,28 @@ class Database {
    * @returns Promise resolving to the subreddit ID
    */
   async addToQueue(subreddit: string): Promise<number> {
-    if (!subreddit) throw new Error("Subreddit name cannot be empty");
-
     const normalizedSubreddit = subreddit.toLowerCase().replace(/^r\//, "");
-    let db = this.db;
-    assert(db);
-    return new Promise((resolve, reject) => {
-      db.run(
-        "INSERT OR IGNORE INTO subreddit_queue (subreddit, visited) VALUES (?, FALSE)",
-        [normalizedSubreddit],
-        function (err) {
-          if (err) {
-            console.error(`Error adding to queue: ${err.message}`);
-            reject(err);
-          } else {
-            // Get the ID of the inserted or existing record
-            db.get(
-              "SELECT id FROM subreddit_queue WHERE subreddit = ?",
-              [normalizedSubreddit],
-              (err, row: any) => {
-                if (err) {
-                  reject(err);
-                } else if (!row) {
-                  reject(
-                    new Error(
-                      `Failed to get ID for subreddit: ${normalizedSubreddit}`,
-                    ),
-                  );
-                } else {
-                  resolve(row.id);
-                }
-              },
-            );
-          }
-        },
-      );
-    });
+
+    await this.query(
+      "INSERT OR IGNORE INTO subreddit_queue (subreddit, visited) VALUES (?, FALSE)",
+      [normalizedSubreddit],
+    );
+    const row = await this.query(
+      "SELECT id FROM subreddit_queue WHERE subreddit = ?",
+      [normalizedSubreddit],
+    );
+
+    return row.id;
   }
 
   async getSubredditId(sub: string): Promise<number> {
-    const db = this.db;
-    assert(db);
-    return new Promise<number>((resolve, reject) => {
-      db.get(
-        "SELECT id FROM subreddit WHERE name = ?",
-        [sub],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else if (!row) {
-            reject(new Error(`Failed to get ID for subreddit: ${sub}`));
-          } else {
-            resolve(row.id);
-          }
-        },
-      );
-    });
+    const row = await this.query(
+      "SELECT id FROM subreddit_queue WHERE subreddit = ?",
+      [sub.toLowerCase().replace(/^r\//, "")],
+    );
+    assert(row.id);
+    assert(typeof row.id === "number");
+    return row.id;
   }
   async addEdge(from: string, to: string) {
     const fromId = await this.getSubredditId(from);
@@ -191,12 +158,13 @@ class Database {
   }
 
   /**
-   * Update the subscriber count for a subreddit
+   * Update the NSFW status for a subreddit
    * @param subreddit - The subreddit name
-   * @param subscribers - The number of subscribers
+   * @param nsfw - Whether the subreddit is NSFW
    */
-  async updateSubscribers(
+  async updateMeta(
     subreddit: string,
+    nsfw: boolean,
     subscribers: number,
   ): Promise<void> {
     if (!subreddit) return;
@@ -205,34 +173,8 @@ class Database {
     assert(db);
     await new Promise<void>((resolve, reject) => {
       db.run(
-        "UPDATE subreddit_queue SET subscribers = ? WHERE subreddit = ?",
-        [subscribers, normalizedSubreddit],
-        (err) => {
-          if (err) {
-            console.error(`Error updating subscribers: ${err.message}`);
-            reject(err);
-          } else {
-            resolve();
-          }
-        },
-      );
-    });
-  }
-
-  /**
-   * Update the NSFW status for a subreddit
-   * @param subreddit - The subreddit name
-   * @param nsfw - Whether the subreddit is NSFW
-   */
-  async updateNSFW(subreddit: string, nsfw: boolean): Promise<void> {
-    if (!subreddit) return;
-    const normalizedSubreddit = subreddit.toLowerCase().replace(/^r\//, "");
-    const db = this.db;
-    assert(db);
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        "UPDATE subreddit_queue SET nsfw = ? WHERE subreddit = ?",
-        [nsfw, normalizedSubreddit],
+        "UPDATE subreddit_queue SET nsfw = ?, subscribers = ? WHERE subreddit = ?",
+        [nsfw, subscribers, normalizedSubreddit],
         (err) => {
           if (err) {
             console.error(`Error updating NSFW status: ${err.message}`);
@@ -301,7 +243,6 @@ class Database {
     if (!subreddits || !subreddits.length) return [];
     const db = this.db;
     assert(db);
-    const ids: number[] = [];
 
     return new Promise<number[]>((resolve, reject) => {
       db.serialize(() => {
@@ -460,6 +401,30 @@ class Database {
     return EdgesArraySchema.parse(result);
   }
 
+  async subreddits() {
+    const rows = z
+      .array(SubredditRow)
+      .parse(
+        await this.all(
+          "SELECT id, subreddit, subscribers, nsfw FROM subreddit_queue",
+        ),
+      );
+    return rows;
+  }
+
+  async query(sql: string, params?: any[]): Promise<any> {
+    const db = this.db;
+    assert(db);
+    return new Promise((resolve, reject) => {
+      db.get(sql, params, (err: Error | null, row: any) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(row);
+      });
+    });
+  }
   async all(query: string) {
     const db = this.db;
     assert(db);

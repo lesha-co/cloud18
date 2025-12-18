@@ -1,4 +1,4 @@
-import RedditCrawler from "./crawler.ts";
+import RedditCrawler from "../crawl/crawler.ts";
 import Database from "./database.ts";
 import assert from "node:assert";
 
@@ -43,7 +43,6 @@ for (const multiredditName of multiredditLinks) {
   for (const subreddit of subreddits) {
     await db.setMulti(multiredditName, subreddit);
   }
-
   console.log(`  Found ${subreddits.length} subreddits in ${multiredditName}`);
 }
 

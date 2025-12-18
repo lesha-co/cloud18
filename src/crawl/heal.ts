@@ -1,19 +1,24 @@
-import RedditCrawler from "./crawl/crawler.ts";
-import { processList } from "./crawl/processList.ts";
-import Database from "./database/database.ts";
-
 import assert from "node:assert";
+import Database from "../database/database.ts";
+import RedditCrawler from "./crawler.ts";
+import { processList } from "./processList.ts";
+
+const sleep = (d: number) => new Promise((r) => setTimeout(r, d));
 
 assert(process.env.DATABASE_FILE);
 assert(process.env.DELAY);
 assert(process.env.USERNAME);
 assert(process.env.PASSWORD);
-
 const delay = parseInt(process.env.DELAY);
 assert(!isNaN(delay));
 
 const db = new Database();
 await db.open(process.env.DATABASE_FILE, false);
+
+const rows = (await db.all(
+  "select subreddit from subreddit_queue where nsfw is null or subscribers is null",
+)) as { subreddit: string }[];
+
 const crawler = new RedditCrawler(
   delay,
   process.env.USERNAME,
@@ -22,21 +27,10 @@ const crawler = new RedditCrawler(
 );
 await crawler.init();
 
-// Process subreddits using the generator
-
 await processList(
-  db.getUnvisitedGenerator(),
+  rows.map((x) => x.subreddit),
   crawler,
   delay,
-  db.getUnvisitedCount,
+  undefined,
   db,
 );
-
-// Report final stats
-console.log(`\nCrawling completed.`);
-const remainingCount = await db.getUnvisitedCount();
-console.log(`${remainingCount} subreddits remaining in queue.`);
-
-// Cleanup
-await crawler.close();
-db.close();

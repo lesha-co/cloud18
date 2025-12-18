@@ -5,12 +5,13 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "crawl": "node --experimental-strip-types --env-file=.env src/index.ts",
-    "seed": "node --experimental-strip-types --env-file=.env src/seed.ts",
-    "extract-data": "node --experimental-strip-types --env-file=.env src/extract-graph-data.ts",
-    "generate-viz": "node --experimental-strip-types --env-file=.env src/generate-visualization.ts",
-    "list-hub-clusters": "node --experimental-strip-types --env-file=.env src/list-hub-clusters.ts",
-    "test": "node --experimental-strip-types --env-file=.env src/test.ts"
+    "crawl": "node --env-file=.env src/index.ts",
+    "heal": "node --env-file=.env src/crawl/heal.ts",
+    "seed": "node --env-file=.env src/seed.ts",
+    "extract-data": "node --env-file=.env src/analysis/extract-graph-data.ts",
+    "generate-viz": "node --env-file=.env src/analysis/generate-visualization.ts",
+    "list-hub-clusters": "node --env-file=.env src/analysis/list-hub-clusters.ts",
+    "test": "node --env-file=.env src/test.ts"
   },
   "author": "",
   "license": "ISC",

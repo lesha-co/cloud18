@@ -1,6 +1,7 @@
 import { firefox } from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { sleep } from "./sleep.ts";
+
+const sleep = (d: number) => new Promise((r) => setTimeout(r, d));
 
 class RedditCrawler {
   public browser: Browser | null = null;

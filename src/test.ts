@@ -1,6 +1,6 @@
 // /r/ActualYuri.
-import RedditCrawler from "./crawler.ts";
-import Database from "./database.ts";
+import RedditCrawler from "./crawl/crawler.ts";
+import Database from "./database/database.ts";
 
 import assert from "node:assert";
 
