@@ -1,0 +1,3 @@
+- `/analysis`: here are various scripts to manipulate graph data
+- `/crawl`: scripts related to crawling data
+- `/database`: api for database

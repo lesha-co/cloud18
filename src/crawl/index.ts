@@ -1,6 +1,9 @@
-import RedditCrawler from "./crawl/crawler.ts";
-import { processList } from "./crawl/processList.ts";
-import Database from "./database/database.ts";
+/**
+ * crawl subreddits in queue
+ */
+import RedditCrawler from "./crawler.ts";
+import { processList } from "./processList.ts";
+import Database from "../database/database.ts";
 
 import assert from "node:assert";
 
