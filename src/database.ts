@@ -2,6 +2,7 @@ import sqlite3 from "sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import assert from "node:assert";
+import z from "zod";
 
 const sqlite = sqlite3.verbose();
 
@@ -428,14 +429,37 @@ class Database {
     });
   }
 
+  async getAllEdgesIDs() {
+    const EdgesArraySchema = z.array(
+      z.object({
+        from_id: z.number(),
+        to_id: z.number(),
+      }),
+    );
+
+    const result = await this.all(`SELECT from_id, to_id FROM subreddit_edges`);
+
+    return EdgesArraySchema.parse(result);
+  }
+
   async getAllEdges() {
-    return await this.all(`SELECT
+    const EdgesArraySchema = z.array(
+      z.object({
+        from_subreddit: z.string(),
+        to_subreddit: z.string(),
+      }),
+    );
+
+    const result = await this.all(`SELECT
       q1.subreddit as from_subreddit,
       q2.subreddit as to_subreddit
     FROM subreddit_edges e
     INNER JOIN subreddit_queue q1 ON e.from_id = q1.id
     INNER JOIN subreddit_queue q2 ON e.to_id = q2.id`);
+
+    return EdgesArraySchema.parse(result);
   }
+
   async all(query: string) {
     const db = this.db;
     assert(db);
