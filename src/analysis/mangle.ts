@@ -9,18 +9,16 @@ import { NodeData } from "./common-types.ts";
 import { getHubClusters } from "./list-hub-clusters.ts";
 import fs from "node:fs/promises";
 assert(process.env.GRAPH_DATA_FILE);
+assert(process.env.MANGLED_DATA_FILE);
 
 const allNodeData = await getJSONFromFile(process.env.GRAPH_DATA_FILE);
-const clusters = await getHubClusters(allNodeData);
+const clusters = getHubClusters(allNodeData);
 
 // selecting members from clusters with > 10
-const selectedMembers = clusters
-  .filter((x) => x.members.length > 10)
-  .flatMap((x) => x.members);
+const selectedMembers = clusters.filter((x) => x.length > 10).flat();
 
 // building indexes for quick lookup
 const communityMembersSubs = new Set(selectedMembers.map((x) => x.subreddit));
-const communityMembersIds = new Set(selectedMembers.map((x) => x.id));
 
 // removing anything that is not selected
 const filteredNodeData: NodeData[] = allNodeData.filter((node) =>
@@ -70,6 +68,6 @@ const mangledNodeData: NodeData[] = filteredNodeData.map((node) => {
 mangledNodeData.sort((a, b) => a.id - b.id);
 
 await fs.writeFile(
-  process.env.GRAPH_DATA_FILE,
+  process.env.MANGLED_DATA_FILE,
   JSON.stringify(mangledNodeData, null, 2),
 );

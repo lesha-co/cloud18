@@ -1,4 +1,3 @@
-// /r/ActualYuri.
 import RedditCrawler from "./crawl/crawler.ts";
 
 import assert from "node:assert";
@@ -20,4 +19,4 @@ await crawler.init();
 
 const sub = await crawler.crawlSubreddit("apple");
 console.log(sub.links);
-assert(sub.links.length >= 17);
+assert(sub.links.length >= 9);

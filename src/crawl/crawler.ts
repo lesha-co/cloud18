@@ -1,9 +1,12 @@
+/**
+ * a class with various functions to interact with reddit
+ */
 import { firefox } from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
 
 const sleep = (d: number) => new Promise((r) => setTimeout(r, d));
 
-class RedditCrawler {
+export default class RedditCrawler {
   public browser: Browser | null = null;
   public context: BrowserContext | null = null;
   private delay: number;
@@ -23,13 +26,16 @@ class RedditCrawler {
     this.headless = headless;
   }
 
-  async findMultis(username: string): Promise<string[]> {
+  /**
+   * find multireddits of a user
+   */
+  async findMultis(): Promise<string[]> {
     if (!this.browser || !this.context) {
       throw new Error("Browser not initialized. Call init() first.");
     }
 
     const page = await this.context.newPage();
-    await page.goto(`https://www.reddit.com/user/${username}`, {
+    await page.goto(`https://www.reddit.com/user/${this.username}`, {
       waitUntil: "domcontentloaded",
     });
 
@@ -233,20 +239,27 @@ class RedditCrawler {
     }
   }
 
-  async crawlMultireddit(user: string, multireddit: string): Promise<string[]> {
+  /**
+   * get a list of subreddits belonging to the multireddit
+   * @param multireddit
+   * @returns
+   */
+  async crawlMultireddit(multireddit: string): Promise<string[]> {
     if (!this.browser || !this.context) {
       throw new Error("Browser not initialized. Call init() first.");
     }
 
+    const page = await this.context.newPage();
     try {
-      const page = await this.context.newPage();
-
-      console.log(`Visiting /user/${user}/m/${multireddit}...`);
+      console.log(`Visiting /user/${this.username}/m/${multireddit}...`);
 
       // Navigate to the subreddit
-      await page.goto(`https://www.reddit.com/user/${user}/m/${multireddit}`, {
-        waitUntil: "domcontentloaded",
-      });
+      await page.goto(
+        `https://www.reddit.com/user/${this.username}/m/${multireddit}`,
+        {
+          waitUntil: "domcontentloaded",
+        },
+      );
 
       // Wait for some content to load
       await page.waitForSelector("body", { timeout: 10000 });
@@ -311,11 +324,15 @@ class RedditCrawler {
       await new Promise((resolve) => setTimeout(resolve, this.delay));
 
       console.log(
-        `Found ${subredditLinks.length} subreddit links on /user/${user}/m/${multireddit}`,
+        `Found ${subredditLinks.length} subreddit links on /user/${this.username}/m/${multireddit}`,
       );
       return subredditLinks;
     } catch (error) {
-      console.error(`Error crawling /user/${user}/m/${multireddit}:`, error);
+      await page.close();
+      console.error(
+        `Error crawling /user/${this.username}/m/${multireddit}:`,
+        error,
+      );
       return [];
     }
   }
@@ -364,7 +381,6 @@ class RedditCrawler {
       // Wait for some content to load
       await page.waitForSelector("body", { timeout: 10000 });
 
-      // Check for age verification or NSFW warning
       const hasAgeGate = await this.checkAndHandleAgeGate(page);
 
       if (hasAgeGate) {
@@ -499,5 +515,3 @@ class RedditCrawler {
     }
   }
 }
-
-export default RedditCrawler;

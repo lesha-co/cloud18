@@ -1,13 +1,12 @@
-import assert from "node:assert";
 import Database from "../database/database.ts";
 import { NodeData } from "./common-types.ts";
 import fs from "node:fs/promises";
 import z from "zod";
 
 export async function getJSONFromFile(filename: string): Promise<NodeData[]> {
-  const fileContent = await fs.readFile(filename, "utf8");
-  const raw = JSON.parse(fileContent);
-  return z.array(NodeData).parse(raw);
+  return z
+    .array(NodeData)
+    .parse(JSON.parse(await fs.readFile(filename, "utf8")));
 }
 
 export async function getJSONFromDatabase(

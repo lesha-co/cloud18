@@ -14,7 +14,7 @@ assert(process.env.GRAPH_DATA_FILE);
 assert(process.env.OUT_NETWORK);
 assert(process.env.TEMPLATE_FILE);
 
-const jsonData = getJSONFromFile(process.env.GRAPH_DATA_FILE);
+const jsonData = await getJSONFromFile(process.env.GRAPH_DATA_FILE);
 const template = await fs.readFile(process.env.TEMPLATE_FILE, "utf-8");
 
 await fs.writeFile(

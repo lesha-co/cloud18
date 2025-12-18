@@ -10,7 +10,6 @@ assert(process.env.PASSWORD);
 const delay = parseInt(process.env.DELAY);
 assert(!isNaN(delay));
 
-const username = process.env.USERNAME;
 const db = new Database();
 await db.open(process.env.DATABASE_FILE, false);
 const crawler = new RedditCrawler(
@@ -21,12 +20,14 @@ const crawler = new RedditCrawler(
 );
 await crawler.init();
 
-console.log(`\n=== Starting seed process for user: ${username} ===\n`);
+console.log(
+  `\n=== Starting seed process for user: ${process.env.USERNAME} ===\n`,
+);
 
-const multiredditLinks = await crawler.findMultis(username);
+const multiredditLinks = await crawler.findMultis();
 
 console.log(
-  `Found ${multiredditLinks.length} multireddits for user ${username}:`,
+  `Found ${multiredditLinks.length} multireddits for user ${process.env.USERNAME}:`,
 );
 multiredditLinks.forEach((link) => console.log(`  - ${link}`));
 
@@ -34,8 +35,10 @@ multiredditLinks.forEach((link) => console.log(`  - ${link}`));
 const subs: string[] = [];
 
 for (const multiredditName of multiredditLinks) {
-  console.log(`\nCrawling multireddit: /user/${username}/m/${multiredditName}`);
-  const subreddits = await crawler.crawlMultireddit(username, multiredditName);
+  console.log(
+    `\nCrawling multireddit: /user/${process.env.USERNAME}/m/${multiredditName}`,
+  );
+  const subreddits = await crawler.crawlMultireddit(multiredditName);
 
   subs.push(...subreddits);
 

@@ -1,3 +1,7 @@
+/**
+ * process the list of subreddits.
+ * Add metadata, add new subreddits to the list
+ */
 import Database from "../database/database.ts";
 import RedditCrawler from "./crawler.ts";
 

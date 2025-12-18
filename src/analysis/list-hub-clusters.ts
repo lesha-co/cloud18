@@ -1,250 +1,98 @@
-#!/usr/bin/env node
+/**
+ * Split graph to several isolated graphs
+ */
 
 import assert from "node:assert";
-import { NodeData, SubredditRow } from "./common-types.ts";
+import { NodeData } from "./common-types.ts";
 import { getJSONFromFile } from "./get-json.ts";
 
-// Type definitions
-type SubredditStats = {
-  name: string;
-  outDegree: number;
-  inDegree: number;
-  totalDegree: number;
-  outConnections: string[];
-  inConnections: string[];
-};
-
-type Graph = {
-  nodes: Set<string>;
-  adjacencyList: Map<string, Set<string>>;
-};
-
-type SmallSubreddit = Pick<SubredditRow, "id" | "subreddit">;
-
-type CommunityWithHub = {
-  name: SmallSubreddit;
-  members: SmallSubreddit[];
-};
-
-// Class definitions
-class ConnectedComponentsDetection {
-  private graph: Graph;
-  private visited: Set<string> = new Set();
-  private components: Map<string, number> = new Map();
-
-  constructor(graph: Graph) {
-    this.graph = graph;
+export function getHubClusters(graph: NodeData[]): NodeData[][] {
+  // create index for lookup
+  const map: Map<number, NodeData> = new Map();
+  for (const node of graph) {
+    map.set(node.id, node);
   }
 
-  detect(): Map<string, number> {
-    let componentId = 0;
-
-    for (const node of this.graph.nodes) {
-      if (!this.visited.has(node)) {
-        const component: string[] = [];
-        this.dfs(node, component);
-        for (const componentNode of component) {
-          this.components.set(componentNode, componentId);
-        }
-
-        componentId++;
+  // Build reverse edges map (for incoming connections)
+  const incomingEdges: Map<number, Set<number>> = new Map();
+  for (const node of graph) {
+    for (const targetId of node.linksTo) {
+      if (!incomingEdges.has(targetId)) {
+        incomingEdges.set(targetId, new Set());
       }
+      incomingEdges.get(targetId)!.add(node.id);
     }
-
-    return this.components;
   }
 
-  private dfs(node: string, component: string[]): void {
-    this.visited.add(node);
+  // Track visited nodes
+  const visited: Set<number> = new Set();
+  const components: NodeData[][] = [];
+
+  // DFS helper function
+  function dfs(nodeId: number, component: NodeData[]): void {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+
+    const node = map.get(nodeId);
+    if (!node) return;
+
     component.push(node);
 
-    const neighbors = this.graph.adjacencyList.get(node) || new Set<string>();
-    for (const neighbor of neighbors) {
-      if (!this.visited.has(neighbor)) {
-        this.dfs(neighbor, component);
+    // Visit all neighbors (outgoing edges)
+    for (const neighborId of node.linksTo) {
+      if (!visited.has(neighborId)) {
+        dfs(neighborId, component);
       }
     }
-  }
-}
 
-// Function definitions
-function buildGraphFromNodeData(nodeData: NodeData[]): Graph {
-  const nodes = new Set<string>();
-  const adjacencyList = new Map<string, Set<string>>();
-
-  // Create a map from numeric ID to subreddit name for quick lookup
-  const idToSubreddit = new Map<number, string>();
-  for (const node of nodeData) {
-    idToSubreddit.set(node.id, node.subreddit);
-    nodes.add(node.subreddit);
-    adjacencyList.set(node.subreddit, new Set<string>());
-  }
-
-  // Build adjacency list from linksTo arrays
-  for (const node of nodeData) {
-    const fromSubreddit = node.subreddit;
-    for (const toId of node.linksTo) {
-      const toSubreddit = idToSubreddit.get(toId);
-      if (toSubreddit) {
-        adjacencyList.get(fromSubreddit)?.add(toSubreddit);
-        // For undirected graph (connected components), add reverse edge
-        if (!adjacencyList.has(toSubreddit)) {
-          adjacencyList.set(toSubreddit, new Set<string>());
+    // Visit all neighbors (incoming edges - treating graph as undirected)
+    const incoming = incomingEdges.get(nodeId);
+    if (incoming) {
+      for (const neighborId of incoming) {
+        if (!visited.has(neighborId)) {
+          dfs(neighborId, component);
         }
-        adjacencyList.get(toSubreddit)?.add(fromSubreddit);
       }
     }
   }
 
-  return { nodes, adjacencyList };
-}
-
-function findHubInCommunity(
-  community: SmallSubreddit[],
-  nodeStats: Map<number, SubredditStats>,
-): SmallSubreddit {
-  let hub = community[0];
-  let maxDegree = 0;
-
-  for (const node of community) {
-    const stats = nodeStats.get(node.id);
-    if (stats && stats.totalDegree > maxDegree) {
-      maxDegree = stats.totalDegree;
-      hub = node;
-    }
-  }
-
-  return hub;
-}
-
-export function calculateNodeStatistics(
-  nodeData: NodeData[],
-): Map<number, SubredditStats> {
-  const stats = new Map<number, SubredditStats>();
-
-  // Create a map from numeric ID to subreddit name
-  const idToSubreddit = new Map<number, string>();
-  for (const node of nodeData) {
-    idToSubreddit.set(node.id, node.subreddit);
-  }
-
-  // Calculate in-degree for each node
-  const inDegree = new Map<string, Set<string>>();
-  for (const node of nodeData) {
-    const fromSubreddit = node.subreddit;
-    for (const toId of node.linksTo) {
-      const toSubreddit = idToSubreddit.get(toId);
-      if (toSubreddit) {
-        if (!inDegree.has(toSubreddit)) {
-          inDegree.set(toSubreddit, new Set<string>());
-        }
-        inDegree.get(toSubreddit)?.add(fromSubreddit);
+  // Find all connected components
+  for (const node of graph) {
+    if (!visited.has(node.id)) {
+      const component: NodeData[] = [];
+      dfs(node.id, component);
+      if (component.length > 0) {
+        components.push(component);
       }
     }
   }
 
-  // Build statistics for each node
-  for (const node of nodeData) {
-    const subredditName = node.subreddit;
-    const outConnections = node.linksTo
-      .map((id) => idToSubreddit.get(id))
-      .filter((name): name is string => name !== undefined);
+  // Sort components by size (largest first)
+  components.sort((a, b) => b.length - a.length);
 
-    const inConnections = Array.from(
-      inDegree.get(subredditName) || new Set<string>(),
-    );
-
-    stats.set(node.id, {
-      name: subredditName,
-      outDegree: outConnections.length,
-      inDegree: inConnections.length,
-      totalDegree: outConnections.length + inConnections.length,
-      outConnections,
-      inConnections,
-    });
-  }
-
-  return stats;
-}
-
-export function analyzeSubredditClusters(
-  nodeData: NodeData[],
-): CommunityWithHub[] {
-  const graph = buildGraphFromNodeData(nodeData);
-  const detector = new ConnectedComponentsDetection(graph);
-  const components = detector.detect();
-  const communityMembers = new Map<number, string[]>();
-
-  for (const [node, communityId] of components.entries()) {
-    if (!communityMembers.has(communityId)) {
-      communityMembers.set(communityId, []);
-    }
-    communityMembers.get(communityId)!.push(node);
-  }
-
-  // Create a map of subreddit name to SmallSubreddit
-  const subredditMap = new Map<string, SmallSubreddit>();
-  for (const node of nodeData) {
-    subredditMap.set(node.subreddit, {
-      id: node.id,
-      subreddit: node.subreddit,
-    });
-  }
-
-  // Get node statistics for finding hubs
-  const nodeStats = calculateNodeStatistics(nodeData);
-
-  const communities: CommunityWithHub[] = Array.from(communityMembers.entries())
-    .map(([id, memberNames]) => {
-      const sortedNames = memberNames.sort((a, b) => a.localeCompare(b));
-      const memberObjects = sortedNames
-        .map((name) => subredditMap.get(name))
-        .filter((member): member is SmallSubreddit => member !== undefined);
-
-      const hub = findHubInCommunity(memberObjects, nodeStats);
-
-      return {
-        name: hub,
-        members: memberObjects,
-      };
-    })
-    .sort((a, b) => b.members.length - a.members.length);
-
-  return communities;
+  return components;
 }
 
 export function printClusters(
-  communities: CommunityWithHub[],
+  communities: NodeData[][],
   condensed = false,
 ): void {
   communities.forEach((community, index) => {
-    if (community.members.length === 0) return;
+    if (community.length === 0) return;
 
-    console.log(
-      `- Group ${index + 1}: ${community.name.subreddit} (${community.members.length} subreddits)`,
-    );
-    (condensed ? community.members.slice(0, 20) : community.members).forEach(
-      (subreddit) => {
+    console.log(`- Group ${index + 1}: ${community.length} subreddits)`);
+    if (!condensed) {
+      community.forEach((subreddit) => {
         console.log(`  - ${subreddit.subreddit}`);
-      },
-    );
-    if (index < communities.length - 1) {
-      console.log();
+      });
     }
   });
-}
-
-export async function getHubClusters(
-  nodeDataArray: NodeData[],
-): Promise<CommunityWithHub[]> {
-  // analyzeSubredditClusters now returns CommunityWithHub[] directly
-  return analyzeSubredditClusters(nodeDataArray);
 }
 
 // Main execution - only run when this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   assert(process.env.GRAPH_DATA_FILE);
   const json = await getJSONFromFile(process.env.GRAPH_DATA_FILE);
-  const communities = await getHubClusters(json);
+  const communities = getHubClusters(json);
   printClusters(communities, true);
 }

@@ -1,3 +1,6 @@
+/**
+ * find entries with missing data and re-request them
+ */
 import assert from "node:assert";
 import Database from "../database/database.ts";
 import RedditCrawler from "./crawler.ts";
