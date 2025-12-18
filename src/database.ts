@@ -21,7 +21,7 @@ class Database {
     return new Promise<void>((resolve, reject) => {
       this.db = new sqlite.Database(
         dbPath,
-        readonly ? sqlite.OPEN_READONLY : sqlite.OPEN_READWRITE,
+        readonly ? sqlite.OPEN_READONLY : undefined,
         (err) => {
           if (err) {
             console.error(`Error opening database: ${err.message}`);
