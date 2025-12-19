@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Subreddit Network Map</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/force-graph"></script>
     <style>
       body {
         margin: 0;
@@ -19,51 +19,6 @@
         height: 100vh;
       }
 
-      .node {
-        cursor: pointer;
-        stroke: #fff;
-        stroke-width: 1.5px;
-      }
-
-      .node:hover {
-        stroke-width: 3px;
-      }
-
-      .link {
-        stroke: #666;
-        stroke-opacity: 0.6;
-        stroke-width: 1px;
-      }
-
-      .link.multi-link {
-        stroke: #8888ff;
-        stroke-opacity: 0.8;
-        stroke-width: 2px;
-      }
-
-      .node-label {
-        pointer-events: none;
-        font-size: 10px;
-        fill: #fff;
-        text-anchor: middle;
-        dominant-baseline: central;
-        text-shadow:
-          0 0 3px #000,
-          0 0 3px #000;
-      }
-
-      #tooltip {
-        position: absolute;
-        padding: 10px;
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        border-radius: 5px;
-        pointer-events: none;
-        display: none;
-        font-size: 12px;
-        border: 1px solid #444;
-      }
-
       #controls {
         position: absolute;
         top: 20px;
@@ -73,6 +28,7 @@
         border-radius: 5px;
         color: white;
         font-size: 12px;
+        z-index: 1000;
       }
 
       #controls label {
@@ -100,50 +56,52 @@
         background: #555;
       }
 
-      #simulationStatus {
-        margin-top: 15px;
-        padding: 8px;
-        border-radius: 3px;
-        text-align: center;
-        font-size: 11px;
-        font-weight: bold;
-        transition: all 0.3s ease;
+      #info {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 15px;
+        border-radius: 5px;
+        color: white;
+        font-size: 12px;
+        max-width: 300px;
       }
 
-      #simulationStatus.running {
-        background: rgba(0, 255, 0, 0.2);
-        border: 1px solid #0f0;
-        color: #0f0;
+      #info h3 {
+        margin-top: 0;
+        font-size: 14px;
       }
 
-      #simulationStatus.stopped {
-        background: rgba(255, 0, 0, 0.2);
-        border: 1px solid #f00;
-        color: #f00;
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
       }
 
-      #simulationStatus.slowing {
-        background: rgba(255, 255, 0, 0.2);
-        border: 1px solid #ff0;
-        color: #ff0;
+      .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 10px;
+        border: 1px solid #fff;
       }
     </style>
   </head>
   <body>
     <div id="graph"></div>
-    <div id="tooltip"></div>
     <div id="controls">
       <label>
         Link Strength:
         <input
           type="range"
           id="linkStrength"
-          min="0.1"
-          max="2"
-          step="0.1"
-          value="1"
+          min="0"
+          max="100"
+          step="5"
+          value="30"
         />
-        <span id="linkStrengthValue">1</span>
+        <span id="linkStrengthValue">30</span>
       </label>
       <label>
         Charge Force:
@@ -157,22 +115,66 @@
         />
         <span id="chargeForceValue">-300</span>
       </label>
+      <label>
+        Collision Strength:
+        <input
+          type="range"
+          id="collisionStrength"
+          min="0"
+          max="2"
+          step="0.1"
+          value="1"
+        />
+        <span id="collisionStrengthValue">1</span>
+      </label>
+      <label>
+        Link Distance:
+        <input
+          type="range"
+          id="linkDistance"
+          min="10"
+          max="200"
+          step="10"
+          value="50"
+        />
+        <span id="linkDistanceValue">50</span>
+      </label>
       <label style="display: flex; align-items: center; margin-top: 15px">
         <input
           type="checkbox"
-          id="continuousMode"
+          id="pauseAnimation"
           style="margin-left: 0; margin-right: 10px"
         />
-        Continuous Simulation
+        Pause Animation
       </label>
-      <button id="restartSimulation">Restart Simulation</button>
-      <div id="simulationStatus" class="stopped">SIMULATION: STOPPED</div>
+      <button id="resetCamera">Reset Camera</button>
+      <button id="reheatSimulation">Reheat Simulation</button>
+    </div>
+    <div id="info">
+      <h3>Legend</h3>
+      <div class="legend-item">
+        <div class="legend-color" style="background-color: #44ff44"></div>
+        <span>SFW Subreddit</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background-color: #ff4444"></div>
+        <span>NSFW Subreddit</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background-color: #4444ff"></div>
+        <span>Multi-reddit</span>
+      </div>
+      <div style="margin-top: 10px; font-size: 11px; color: #888">
+        Node size represents subscriber count<br />
+        Click nodes to highlight connections<br />
+        Scroll to zoom, drag to pan
+      </div>
     </div>
 
     <script>
       const rawData = %TEMPLATE%;
 
-      // Transform the raw graph data to visualization format
+      // Transform the raw graph data to force-graph format
       function transformGraphData(jsonData) {
         // Create a map for quick ID to node lookup
         const nodeMap = new Map();
@@ -180,10 +182,9 @@
           nodeMap.set(node.id, node);
         });
 
-        // Calculate degree for each node (in-degree + out-degree)
+        // Calculate degree for each node
         const inDegree = new Map();
         jsonData.forEach((node) => {
-          // Out-degree is the length of linksTo
           node.linksTo.forEach((targetId) => {
             inDegree.set(targetId, (inDegree.get(targetId) || 0) + 1);
           });
@@ -192,24 +193,24 @@
         // Transform nodes
         const nodes = jsonData.map((node) => {
           const isMulti = node.subreddit.startsWith("multi:");
-          const nodeId = node.subreddit; // Use subreddit name as ID directly
           const outDegree = node.linksTo.length;
           const inDegreeCount = inDegree.get(node.id) || 0;
           const totalDegree = outDegree + inDegreeCount;
 
           return {
-            id: nodeId,
-            degree: totalDegree,
-            meta: {
-              nsfw: node.nsfw ? 1 : 0,
-              subs: node.subscribers ?? 0, // Use 0 if null
-            },
+            id: node.subreddit, // Use subreddit name as ID
+            nodeId: node.id, // Keep numeric ID for reference
+            name: node.subreddit,
+            nsfw: node.nsfw ? 1 : 0,
+            subscribers: node.subscribers ?? 0,
             isMulti,
+            degree: totalDegree,
+            val: Math.sqrt(node.subscribers ?? 1000) / 100, // Node size based on subscribers
           };
         });
 
-        // Extract edges from the linksTo arrays
-        const edges = [];
+        // Extract links from the linksTo arrays
+        const links = [];
         jsonData.forEach((fromNode) => {
           fromNode.linksTo.forEach((toNodeId) => {
             const toNode = nodeMap.get(toNodeId);
@@ -222,254 +223,343 @@
                 fromNode.subreddit.startsWith("multi:") ||
                 toNode.subreddit.startsWith("multi:");
 
-              edges.push({
-                from_subreddit: fromId,
-                to_subreddit: toId,
-                ...(isMultiLink ? { type: "multi-link" } : {}),
+              links.push({
+                source: fromId,
+                target: toId,
+                isMultiLink,
+                value: isMultiLink ? 2 : 1,
               });
             }
           });
         });
 
-        return { nodes, edges };
+        return { nodes, links };
       }
 
       // Transform the raw data
       const graphData = transformGraphData(rawData);
-      console.log(`Transformed to ${graphData.nodes.length} nodes and ${graphData.edges.length} edges`);
+      console.log(
+        `Transformed to ${graphData.nodes.length} nodes and ${graphData.links.length} links`
+      );
 
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      // Create the force graph
+      const elem = document.getElementById("graph");
+      const Graph = new ForceGraph(elem)
+        .backgroundColor("#1a1a1a")
+        .nodeRelSize(6)
+        .nodeVal((node) => node.val)
+        .nodeColor((node) => {
+          if (node.isMulti) return "#4444ff";
+          return node.nsfw ? "#ff4444" : "#44ff44";
+        })
+        .nodeCanvasObjectMode(() => 'replace')
+        .nodeCanvasObject((node, ctx, globalScale) => {
+          const label = node.isMulti ? node.name.replace('multi:', 'm:') : node.name.replace('r/', '');
+          const fontSize = Math.max(12, Math.min(20, 14 / Math.sqrt(globalScale)));
 
-      const svg = d3.select("#graph")
-          .append("svg")
-          .attr("width", width)
-          .attr("height", height);
+          // Calculate node radius
+          const nodeRadius = Math.sqrt(node.val || 1) * 6;
 
-      const g = svg.append("g");
+          // Draw node circle
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, nodeRadius, 0, 2 * Math.PI, false);
 
-      const zoom = d3.zoom()
-          .scaleExtent([0.1, 10])
-          .on("zoom", (event) => {
-              g.attr("transform", event.transform);
-          });
-
-      svg.call(zoom);
-
-      const getNodeColor = (d) => {
-          if (d.isMulti) {
-              return '#4444ff'; // Blue for multi nodes
-          }
-          return ['#44ff44', '#ff4444' ][d.meta.nsfw]  ;
-      };
-
-      const maxSubscribers = d3.max(graphData.nodes, d => d.meta?.subs || 0);
-      const sizeScale = d3.scaleSqrt()
-          .domain([0, maxSubscribers > 0 ? maxSubscribers : 10000])
-          .range([5, 40]);
-
-      const getNodeSize = (d) => {
-          if (d.isMulti) {
-              return sizeScale(d.meta.subs) * 1.5;
-          }
-          const value = d.meta.subs;
-          return sizeScale(value);
-      };
-
-      const linkData = graphData.edges.map(edge => ({
-          source: edge.from_subreddit,
-          target: edge.to_subreddit,
-          value: 1,
-          type: edge.type || 'normal'
-      }));
-
-      const simulation = d3.forceSimulation(graphData.nodes)
-          .force("link", d3.forceLink(linkData)
-              .id(d => d.id)
-              .distance(d => d.type === 'multi-link' ? 30 : 50 + 10 * Math.sqrt(d.source.degree + d.target.degree))
-              .strength(d => d.type === 'multi-link' ? 1.5 : 0.3))
-          .force("charge", d3.forceManyBody()
-              .strength(d => -150 - 10 * Math.sqrt(d.degree || 1)))
-          .force("center", d3.forceCenter(width / 2, height / 2))
-          .force("collision", d3.forceCollide().radius(d => getNodeSize(d) + 3))
-          .force("x", d3.forceX(width / 2).strength(0.02))
-          .force("y", d3.forceY(height / 2).strength(0.02))
-          .alphaDecay(0.01) // Slower decay (default ~0.0228) - simulation runs longer
-          .alphaMin(0.0001) // Lower minimum alpha (default 0.001) - runs until more settled
-          .velocityDecay(0.3); // Less friction (default 0.4) - smoother movement
-
-      const link = g.append("g")
-          .selectAll("line")
-          .data(linkData)
-          .enter().append("line")
-          .attr("class", d => d.type === 'multi-link' ? 'link multi-link' : 'link');
-
-      const node = g.append("g")
-          .selectAll("circle")
-          .data(graphData.nodes)
-          .enter().append("circle")
-          .attr("class", "node")
-          .attr("r", d => getNodeSize(d))
-          .attr("fill", d => getNodeColor(d))
-          .call(d3.drag()
-              .on("start", dragstarted)
-              .on("drag", dragged)
-              .on("end", dragended));
-
-      const label = g.append("g")
-          .selectAll("text")
-          .data(graphData.nodes)
-          .enter().append("text")
-          .attr("class", "node-label")
-          .text(d => d.isMulti ? d.id.replace('multi:', 'm:') : d.id)
-          .style("font-size", d => Math.max(8, Math.min(getNodeSize(d) * 0.7, 14)) + "px")
-
-      const tooltip = d3.select("#tooltip");
-
-      node
-          .on("mouseover", (event, d) => {
-              // Count connections (matches degree)
-              const connections = graphData.edges.filter(l =>
-                  l.from_subreddit === d.id || l.to_subreddit === d.id
-              ).length;
-
-              const tooltipContent = d.isMulti ?
-                  `<strong>Multi: ${d.id.replace('multi:', '')}</strong><br>
-                   Subreddits: ${Math.floor(d.meta.subs / 1000)}<br>
-                   Connections: ${connections}<br>
-                   Degree: ${d.degree}` :
-                  `<strong>r/${d.id}</strong><br>
-                   Subscribers: ${d.meta.subs.toLocaleString()}<br>
-                   NSFW: ${d.meta.nsfw ? 'Yes' : 'No'}<br>
-                   Connections: ${connections}<br>
-                   Degree: ${d.degree}`;
-
-              tooltip
-                  .style("display", "block")
-                  .style("left", (event.pageX + 10) + "px")
-                  .style("top", (event.pageY - 10) + "px")
-                  .html(tooltipContent);
-          })
-          .on("mouseout", () => {
-              tooltip.style("display", "none");
-          });
-
-      // Status indicator element
-      const statusIndicator = document.getElementById('simulationStatus');
-
-      // Update simulation status
-      function updateSimulationStatus() {
-          const alpha = simulation.alpha();
-          const alphaMin = simulation.alphaMin();
-
-          if (alpha <= alphaMin) {
-              statusIndicator.textContent = 'SIMULATION: STOPPED';
-              statusIndicator.className = 'stopped';
-          } else if (alpha < 0.05) {
-              statusIndicator.textContent = `SIMULATION: SETTLING (α=${alpha.toFixed(4)})`;
-              statusIndicator.className = 'slowing';
+          // Set fill color based on node type
+          if (node.isMulti) {
+            ctx.fillStyle = '#4444ff';
           } else {
-              statusIndicator.textContent = `SIMULATION: RUNNING (α=${alpha.toFixed(4)})`;
-              statusIndicator.className = 'running';
+            ctx.fillStyle = node.nsfw ? '#ff4444' : '#44ff44';
           }
-      }
+          ctx.fill();
 
-      // Update positions on tick
-      simulation.on("tick", () => {
-          link
-              .attr("x1", d => d.source.x)
-              .attr("y1", d => d.source.y)
-              .attr("x2", d => d.target.x)
-              .attr("y2", d => d.target.y);
+          // Draw border
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
 
-          node
-              .attr("cx", d => d.x)
-              .attr("cy", d => d.y);
+          // Draw text label
+          ctx.font = `${fontSize}px Sans-Serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
 
-          label
-              .attr("x", d => d.x)
-              .attr("y", d => d.y);
+          // Add text shadow for better readability
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillText(label, node.x + 1, node.y + 1);
 
-          // Update status on every tick
-          updateSimulationStatus();
+          // Draw actual text
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, node.x, node.y);
+        })
+        .nodeLabel((node) => {
+          const connections = graphData.links.filter(
+            (l) => l.source.id === node.id || l.target.id === node.id
+          ).length;
+
+          if (node.isMulti) {
+            return `<div style="background: rgba(0,0,0,0.9); padding: 8px; border-radius: 4px; border: 1px solid #444;">
+                      <strong>Multi: ${node.name.replace("multi:", "")}</strong><br>
+                      Subreddits: ${Math.floor(node.subscribers / 1000)}<br>
+                      Connections: ${connections}<br>
+                      Degree: ${node.degree}
+                    </div>`;
+          }
+          return `<div style="background: rgba(0,0,0,0.9); padding: 8px; border-radius: 4px; border: 1px solid #444;">
+                    <strong>r/${node.name}</strong><br>
+                    Subscribers: ${node.subscribers.toLocaleString()}<br>
+                    NSFW: ${node.nsfw ? "Yes" : "No"}<br>
+                    Connections: ${connections}<br>
+                    Degree: ${node.degree}
+                  </div>`;
+        })
+        .linkColor((link) => (link.isMultiLink ? "#8888ff99" : "#66666699"))
+        .linkWidth((link) => (link.isMultiLink ? 2 : 1))
+        .linkDirectionalParticles(1)
+        .linkCurvature(0)
+        .enableNodeDrag(true)
+        .enableZoomPanInteraction(true)
+        .d3AlphaDecay(0.01)
+        .d3VelocityDecay(0.3)
+        .graphData(graphData)
+        .onEngineStop(() => {
+          // Add collision force after the engine is initialized
+          // Access d3's forceCollide through the internal d3 module
+          const d3Module = window.d3 || Graph._graphData?.nodes?.[0]?.__proto__?.constructor?.d3;
+          if (!d3Module) {
+            // Fallback: create a simple collision detection
+            Graph.d3Force("collision", (alpha) => {
+              const nodes = Graph.graphData().nodes;
+              const collisionPadding = 2;
+
+              for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                  const node1 = nodes[i];
+                  const node2 = nodes[j];
+
+                  const dx = node2.x - node1.x;
+                  const dy = node2.y - node1.y;
+                  const distance = Math.sqrt(dx * dx + dy * dy);
+
+                  const radius1 = (node1.val || 1) * 6 + collisionPadding;
+                  const radius2 = (node2.val || 1) * 6 + collisionPadding;
+                  const minDistance = radius1 + radius2;
+
+                  if (distance < minDistance && distance > 0) {
+                    const overlap = minDistance - distance;
+                    const force = overlap * alpha * 0.5;
+
+                    const fx = (dx / distance) * force;
+                    const fy = (dy / distance) * force;
+
+                    node1.vx -= fx;
+                    node1.vy -= fy;
+                    node2.vx += fx;
+                    node2.vy += fy;
+                  }
+                }
+              }
+            });
+          }
+        });
+
+      // Store highlighted state
+      let highlightNodes = new Set();
+      let highlightLinks = new Set();
+      let hoverNode = null;
+
+      // Node click to highlight connections
+      Graph.onNodeClick((node) => {
+        // Clear previous highlights
+        highlightNodes.clear();
+        highlightLinks.clear();
+
+        if (node) {
+          highlightNodes.add(node);
+
+          // Find connected nodes and links
+          graphData.links.forEach((link) => {
+            if (link.source.id === node.id) {
+              highlightNodes.add(link.target);
+              highlightLinks.add(link);
+            } else if (link.target.id === node.id) {
+              highlightNodes.add(link.source);
+              highlightLinks.add(link);
+            }
+          });
+        }
+
+        // Update node colors
+        Graph.nodeColor((n) => {
+          if (highlightNodes.size === 0) {
+            // No highlights, show normal colors
+            if (n.isMulti) return "#4444ff";
+            return n.nsfw ? "#ff4444" : "#44ff44";
+          }
+          // Dim non-highlighted nodes
+          if (highlightNodes.has(n)) {
+            if (n.isMulti) return "#4444ff";
+            return n.nsfw ? "#ff4444" : "#44ff44";
+          }
+          return "#333333";
+        });
+
+        // Update link colors
+        Graph.linkColor((link) => {
+          if (highlightLinks.size === 0) {
+            return link.isMultiLink ? "#8888ff" : "#666666";
+          }
+          if (highlightLinks.has(link)) {
+            return link.isMultiLink ? "#8888ff" : "#888888";
+          }
+          return "#222222";
+        });
+
+        // Update link width
+        Graph.linkWidth((link) => {
+          if (highlightLinks.has(link)) {
+            return link.isMultiLink ? 3 : 2;
+          }
+          return link.isMultiLink ? 2 : 1;
+        });
       });
 
-      // Also check status periodically when simulation stops
-      simulation.on("end", () => {
-          updateSimulationStatus();
-
-          // Check if continuous mode is enabled
-          const continuousMode = document.getElementById('continuousMode');
-          if (continuousMode.checked) {
-              // Restart simulation with a moderate alpha value
-              setTimeout(() => {
-                  simulation.alpha(0.3).restart();
-              }, 100); // Small delay to prevent immediate restart loops
-          }
+      // Node hover effects
+      Graph.onNodeHover((node) => {
+        hoverNode = node;
+        elem.style.cursor = node ? "pointer" : "default";
       });
 
-      // Drag functions
-      function dragstarted(event) {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          event.subject.fx = event.subject.x;
-          event.subject.fy = event.subject.y;
-      }
+      // Background click to clear highlights
+      Graph.onBackgroundClick(() => {
+        highlightNodes.clear();
+        highlightLinks.clear();
 
-      function dragged(event) {
-          event.subject.fx = event.x;
-          event.subject.fy = event.y;
-      }
+        // Reset colors
+        Graph.nodeColor((node) => {
+          if (node.isMulti) return "#4444ff";
+          return node.nsfw ? "#ff4444" : "#44ff44";
+        });
 
-      function dragended(event) {
-          if (!event.active) simulation.alphaTarget(0);
-          event.subject.fx = null;
-          event.subject.fy = null;
-      }
+        Graph.linkColor((link) =>
+          link.isMultiLink ? "#8888ff" : "#666666"
+        );
+
+        Graph.linkWidth((link) => (link.isMultiLink ? 2 : 1));
+      });
 
       // Controls
-      const linkStrengthSlider = document.getElementById('linkStrength');
-      const linkStrengthValue = document.getElementById('linkStrengthValue');
-      const chargeForceSlider = document.getElementById('chargeForce');
-      const chargeForceValue = document.getElementById('chargeForceValue');
+      const linkStrengthSlider = document.getElementById("linkStrength");
+      const linkStrengthValue = document.getElementById("linkStrengthValue");
+      const chargeForceSlider = document.getElementById("chargeForce");
+      const chargeForceValue = document.getElementById("chargeForceValue");
+      const linkDistanceSlider = document.getElementById("linkDistance");
+      const linkDistanceValue = document.getElementById("linkDistanceValue");
+      const collisionStrengthSlider = document.getElementById("collisionStrength");
+      const collisionStrengthValue = document.getElementById("collisionStrengthValue");
 
-      linkStrengthSlider.addEventListener('input', (e) => {
-          const value = e.target.value;
-          linkStrengthValue.textContent = value;
-          simulation.force("link").strength(+value);
-          simulation.alpha(0.3).restart();
+      linkStrengthSlider.addEventListener("input", (e) => {
+        const value = e.target.value;
+        linkStrengthValue.textContent = value;
+        Graph.d3Force("link").strength(value / 100);
+        Graph.numDimensions(3); // Trigger re-render
+        Graph.numDimensions(2);
       });
 
-      chargeForceSlider.addEventListener('input', (e) => {
-          const value = e.target.value;
-          chargeForceValue.textContent = value;
-          simulation.force("charge").strength(+value);
-          simulation.alpha(0.3).restart();
+      chargeForceSlider.addEventListener("input", (e) => {
+        const value = e.target.value;
+        chargeForceValue.textContent = value;
+        Graph.d3Force("charge").strength(+value);
+        Graph.numDimensions(3); // Trigger re-render
+        Graph.numDimensions(2);
       });
 
-      // Restart button
-      const restartButton = document.getElementById('restartSimulation');
-      restartButton.addEventListener('click', () => {
-          simulation.alpha(1).restart(); // Full restart with alpha = 1
+      linkDistanceSlider.addEventListener("input", (e) => {
+        const value = e.target.value;
+        linkDistanceValue.textContent = value;
+        Graph.d3Force("link").distance(+value);
+        Graph.numDimensions(3); // Trigger re-render
+        Graph.numDimensions(2);
       });
 
-      // Continuous mode toggle
-      const continuousModeCheckbox = document.getElementById('continuousMode');
-      continuousModeCheckbox.addEventListener('change', (e) => {
-          if (e.target.checked && simulation.alpha() <= simulation.alphaMin()) {
-              // If enabling continuous mode and simulation is stopped, restart it
-              simulation.alpha(0.3).restart();
+      collisionStrengthSlider.addEventListener("input", (e) => {
+        const value = e.target.value;
+        collisionStrengthValue.textContent = value;
+        // Update collision force strength by recreating it
+        Graph.d3Force("collision", (alpha) => {
+          const nodes = Graph.graphData().nodes;
+          const collisionPadding = 2;
+          const strength = +value;
+
+          for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+              const node1 = nodes[i];
+              const node2 = nodes[j];
+
+              const dx = node2.x - node1.x;
+              const dy = node2.y - node1.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+
+              const radius1 = (node1.val || 1) * 6 + collisionPadding;
+              const radius2 = (node2.val || 1) * 6 + collisionPadding;
+              const minDistance = radius1 + radius2;
+
+              if (distance < minDistance && distance > 0) {
+                const overlap = minDistance - distance;
+                const force = overlap * alpha * strength * 0.5;
+
+                const fx = (dx / distance) * force;
+                const fy = (dy / distance) * force;
+
+                node1.vx -= fx;
+                node1.vy -= fy;
+                node2.vx += fx;
+                node2.vy += fy;
+              }
+            }
           }
+        });
+        Graph.d3ReheatSimulation();
+      });
+
+      // Pause animation checkbox
+      const pauseAnimationCheckbox = document.getElementById("pauseAnimation");
+      pauseAnimationCheckbox.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          Graph.pauseAnimation();
+        } else {
+          Graph.resumeAnimation();
+        }
+      });
+
+      // Reset camera button
+      const resetCameraButton = document.getElementById("resetCamera");
+      resetCameraButton.addEventListener("click", () => {
+        Graph.centerAt(0, 0, 1000);
+        Graph.zoom(1, 1000);
+      });
+
+      // Reheat simulation button
+      const reheatSimulationButton =
+        document.getElementById("reheatSimulation");
+      reheatSimulationButton.addEventListener("click", () => {
+        Graph.d3ReheatSimulation();
       });
 
       // Keyboard shortcuts
-      document.addEventListener('keydown', (e) => {
-          if (e.key === 'r' || e.key === 'R') {
-              // Reset zoom
-              svg.transition().duration(750).call(
-                  zoom.transform,
-                  d3.zoomIdentity
-              );
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "r" || e.key === "R") {
+          // Reset zoom
+          Graph.centerAt(0, 0, 1000);
+          Graph.zoom(1, 1000);
+        } else if (e.key === " ") {
+          // Space to pause/resume
+          e.preventDefault();
+          pauseAnimationCheckbox.checked = !pauseAnimationCheckbox.checked;
+          if (pauseAnimationCheckbox.checked) {
+            Graph.pauseAnimation();
+          } else {
+            Graph.resumeAnimation();
           }
+        }
       });
     </script>
   </body>
