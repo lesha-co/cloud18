@@ -1,8 +1,12 @@
-import { forceCollide, forceCenter } from "https://esm.sh/d3-force";
+import {
+  forceCollide,
+  forceCenter,
+  forceManyBody,
+} from "https://esm.sh/d3-force";
 import rawData from "./graph-nsfw.json" with { type: "json" };
 
 function getRadius(nodePopulation) {
-  return Math.sqrt(nodePopulation) / 50;
+  return Math.sqrt(nodePopulation) / 10;
 }
 
 // Transform the raw graph data to force-graph format
@@ -89,7 +93,7 @@ Graph.backgroundColor("#1a1a1a")
     const label = node.isMulti
       ? node.name.replace("multi:", "m:")
       : node.name.replace("r/", "");
-    const fontSize = Math.max(12, Math.min(20, 14 / Math.sqrt(globalScale)));
+    const fontSize = Math.max(12, node.val / 2);
 
     // Draw node circle
     ctx.beginPath();
@@ -155,6 +159,7 @@ Graph.backgroundColor("#1a1a1a")
       return node.val * 1.5;
     }),
   )
+  .d3Force("charge", forceManyBody().strength(-100))
   .d3Force("center", forceCenter())
   .graphData(graphData)
   .linkDirectionalArrowLength(6);
